@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Site content configuration
+    // Public read ensures all visitors get current published content in real-time
+    // Write access enabled for site administrator updates
+    match /site_content/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Admin users collection (separated from site content)
+    match /admin_users/{userId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Expenses (Gastos) collection
+    match /expenses/{expenseId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Expenses settings collection
+    match /expenses_settings/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+  }
+}

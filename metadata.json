@@ -1,0 +1,6 @@
+{
+  "name": "La Casa del Disfraz - Renta y Venta de Disfraces",
+  "description": "Catálogo interactivo, renta y venta de disfraces en Ciudad Guzmán, Jalisco. Encuentra disfraces para niños, niñas, adultos, festivales escolares, Halloween y eventos especiales.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

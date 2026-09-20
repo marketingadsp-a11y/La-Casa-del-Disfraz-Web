@@ -1,0 +1,118 @@
+{
+  "entities": {
+    "SiteContent": {
+      "title": "SiteContent",
+      "description": "Global website configuration, texts, titles, buttons, hours, and branding editable via the /cyc admin dashboard.",
+      "type": "object",
+      "properties": {
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of the last update"
+        },
+        "storeInfo": {
+          "type": "object",
+          "description": "General store contact and brand information"
+        },
+        "hero": {
+          "type": "object",
+          "description": "Hero banner titles, descriptions, and CTA buttons"
+        },
+        "story": {
+          "type": "object",
+          "description": "Our story section texts, image, and milestones"
+        },
+        "requirements": {
+          "type": "object",
+          "description": "4-step rental process texts"
+        },
+        "customOrders": {
+          "type": "object",
+          "description": "Invitations and custom souvenir CyC section"
+        },
+        "faqs": {
+          "type": "array",
+          "description": "List of FAQ question and answer items"
+        },
+        "reviews": {
+          "type": "array",
+          "description": "Customer testimonials"
+        },
+        "announcement": {
+          "type": "object",
+          "description": "Top announcement banner configuration"
+        },
+        "theme": {
+          "type": "object",
+          "description": "Brand theme color and accent styling"
+        }
+      }
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized administrator user credentials and roles for CyC admin panel.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "username": {
+          "type": "string"
+        },
+        "passwordHashOrPlain": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      }
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Registered expense with concept, amount, and timestamp.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "concept": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "number"
+        },
+        "date": {
+          "type": "string"
+        },
+        "registeredBy": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "firestore": {
+    "/site_content/{docId}": {
+      "schema": "SiteContent",
+      "description": "Global document containing all editable website elements for La Casa del Disfraz."
+    },
+    "/admin_users/{userId}": {
+      "schema": "AdminUser",
+      "description": "Dedicated collection for authorized administrator accounts."
+    },
+    "/expenses/{expenseId}": {
+      "schema": "Expense",
+      "description": "Store expenses registered via /registrogastos."
+    }
+  }
+}
