@@ -1,15 +1,22 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { doc, onSnapshot, setDoc, deleteDoc, updateDoc, collection } from 'firebase/firestore';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react';
+import { 
+  doc, 
+  onSnapshot, 
+  setDoc, 
+  deleteDoc, 
+  updateDoc, 
+  collection, 
+  getDocs,
+  writeBatch
+} from 'firebase/firestore';
 import { db } from '../firebase';
 import { ExpenseItem, ExpensesConfig } from '../types/expenses';
 
-// Documents within 'site_content' are guaranteed to be permitted by live Firestore rules
+// Collections & Document IDs
 const SITE_CONTENT_COLLECTION = 'site_content';
 const EXPENSES_DOC = 'expenses_data';
 const CONFIG_DOC = 'expenses_config';
-
-// Fallback collections
-const LEGACY_EXPENSES_COLLECTION = 'expenses';
+const EXPENSES_COLLECTION = 'expenses';
 
 const LOCAL_EXPENSES_CACHE = 'lcd_expenses_cache';
 const LOCAL_CONFIG_CACHE = 'lcd_expenses_config_cache';
@@ -18,6 +25,67 @@ const DEFAULT_CONFIG: ExpensesConfig = {
   lockPin: '012004',
   currencySymbol: '$',
   updatedAt: new Date().toISOString()
+};
+
+/**
+ * CRITICAL SANITIZER:
+ * Firebase Firestore throws fatal errors if any field is `undefined`.
+ * This sanitizer ensures no `undefined` properties are ever passed to Firestore.
+ */
+export const sanitizeForFirestore = (item: Partial<ExpenseItem>): Record<string, any> => {
+  const clean: Record<string, any> = {};
+
+  if (item.id) clean.id = String(item.id);
+  if (item.concept !== undefined && item.concept !== null) clean.concept = String(item.concept).trim();
+
+  if (item.amount !== undefined && item.amount !== null) {
+    const num = typeof item.amount === 'number' ? item.amount : parseFloat(String(item.amount));
+    clean.amount = isNaN(num) ? 0 : Number(num.toFixed(2));
+  } else {
+    clean.amount = 0;
+  }
+
+  clean.date = item.date ? String(item.date) : new Date().toISOString();
+  clean.createdAt = item.createdAt ? String(item.createdAt) : clean.date;
+
+  if (typeof item.notes === 'string' && item.notes.trim().length > 0) {
+    clean.notes = item.notes.trim();
+  }
+
+  if (typeof item.registeredBy === 'string' && item.registeredBy.trim().length > 0) {
+    clean.registeredBy = item.registeredBy.trim();
+  }
+
+  return clean;
+};
+
+export const sanitizeExpenseList = (list: ExpenseItem[]): ExpenseItem[] => {
+  return list.map(raw => {
+    const sanitized = sanitizeForFirestore(raw);
+    const item: ExpenseItem = {
+      id: sanitized.id || `exp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      concept: sanitized.concept || 'Gasto',
+      amount: sanitized.amount,
+      date: sanitized.date,
+      createdAt: sanitized.createdAt
+    };
+    if (sanitized.notes) item.notes = sanitized.notes;
+    if (sanitized.registeredBy) item.registeredBy = sanitized.registeredBy;
+    return item;
+  });
+};
+
+const mergeExpenseLists = (primary: ExpenseItem[], secondary: ExpenseItem[]): ExpenseItem[] => {
+  const map = new Map<string, ExpenseItem>();
+  secondary.forEach(item => {
+    if (item && item.id) map.set(item.id, item);
+  });
+  primary.forEach(item => {
+    if (item && item.id) map.set(item.id, item);
+  });
+  const merged = Array.from(map.values());
+  merged.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  return merged;
 };
 
 interface ExpensesContextType {
@@ -36,14 +104,14 @@ interface ExpensesContextType {
 const ExpensesContext = createContext<ExpensesContextType | undefined>(undefined);
 
 export const ExpensesProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Initialize from localStorage cache
+  // Initialize from localStorage cache immediately
   const [expenses, setExpenses] = useState<ExpenseItem[]>(() => {
     try {
       const cached = localStorage.getItem(LOCAL_EXPENSES_CACHE);
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed)) {
-          return parsed;
+          return sanitizeExpenseList(parsed);
         }
       }
     } catch (e) {
@@ -77,129 +145,137 @@ export const ExpensesProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   }, []);
 
-  // Helper to save whole list to Firestore under site_content/expenses_data
-  const syncToCloudDoc = async (list: ExpenseItem[]) => {
+  // Helper to sync to Firestore: both /expenses/{id} and /site_content/expenses_data
+  const syncToCloud = useCallback(async (fullList: ExpenseItem[], singleItem?: ExpenseItem): Promise<boolean> => {
+    const cleanList = sanitizeExpenseList(fullList);
+    let success = false;
+
+    // 1. Save single doc to /expenses/{id} if provided (individual atomic document)
+    if (singleItem) {
+      try {
+        const cleanSingle = sanitizeForFirestore(singleItem);
+        await setDoc(doc(db, EXPENSES_COLLECTION, singleItem.id), cleanSingle);
+        success = true;
+      } catch (err) {
+        console.error('Error saving to /expenses collection:', err);
+      }
+    }
+
+    // 2. Save full array to /site_content/expenses_data
     try {
       const docRef = doc(db, SITE_CONTENT_COLLECTION, EXPENSES_DOC);
       await setDoc(docRef, {
-        items: list,
+        items: cleanList.map(item => sanitizeForFirestore(item)),
         updatedAt: new Date().toISOString(),
-        count: list.length
+        count: cleanList.length
       }, { merge: true });
+      success = true;
       setIsCloudSynced(true);
-      return true;
     } catch (err) {
-      console.warn('Notice saving to site_content/expenses_data:', err);
-      return false;
+      console.error('Error saving to /site_content/expenses_data:', err);
     }
-  };
 
-  // 1. Subscribe to real-time site_content/expenses_data
-  useEffect(() => {
-    let isSubscribed = true;
-
-    try {
-      const docRef = doc(db, SITE_CONTENT_COLLECTION, EXPENSES_DOC);
-      const unsubscribe = onSnapshot(
-        docRef,
-        (snapshot) => {
-          if (!isSubscribed) return;
-
-          if (snapshot.exists()) {
-            const data = snapshot.data();
-            if (Array.isArray(data.items)) {
-              const cloudItems: ExpenseItem[] = data.items.map((raw: any) => ({
-                id: String(raw.id || `exp_${Date.now()}`),
-                concept: String(raw.concept || 'Gasto'),
-                amount: typeof raw.amount === 'number' ? raw.amount : parseFloat(String(raw.amount || 0)),
-                date: raw.date || new Date().toISOString(),
-                registeredBy: raw.registeredBy,
-                notes: raw.notes,
-                createdAt: raw.createdAt || new Date().toISOString()
-              }));
-
-              // Sort newest first
-              cloudItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-              setExpenses(cloudItems);
-              persistLocalExpenses(cloudItems);
-              setIsCloudSynced(true);
-            }
-          } else {
-            // Document doesn't exist yet: if we have local cached expenses, push them to Firestore!
-            try {
-              const cached = localStorage.getItem(LOCAL_EXPENSES_CACHE);
-              if (cached) {
-                const parsed = JSON.parse(cached);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                  setDoc(docRef, {
-                    items: parsed,
-                    updatedAt: new Date().toISOString(),
-                    count: parsed.length
-                  }, { merge: true }).catch(() => {});
-                }
-              }
-            } catch {
-              // ignore
-            }
-          }
-          setIsLoading(false);
-        },
-        (error) => {
-          console.warn('Notice on expenses doc snapshot:', error);
-          if (isSubscribed) {
-            setIsLoading(false);
-            setIsCloudSynced(false);
-          }
-        }
-      );
-
-      return () => {
-        isSubscribed = false;
-        unsubscribe();
-      };
-    } catch (err) {
-      console.warn('Error setting up expenses listener:', err);
-      setIsLoading(false);
-    }
-  }, [persistLocalExpenses]);
-
-  // 2. Subscribe to real-time config (lockPin) in site_content/expenses_config
-  useEffect(() => {
-    let isSubscribed = true;
-    try {
-      const configRef = doc(db, SITE_CONTENT_COLLECTION, CONFIG_DOC);
-      const unsubscribe = onSnapshot(
-        configRef,
-        (snapshot) => {
-          if (!isSubscribed) return;
-          if (snapshot.exists()) {
-            const data = snapshot.data() as Partial<ExpensesConfig>;
-            const merged = { ...DEFAULT_CONFIG, ...data };
-            setConfig(merged);
-            try {
-              localStorage.setItem(LOCAL_CONFIG_CACHE, JSON.stringify(merged));
-            } catch {
-              // ignore
-            }
-          } else {
-            // Seed initial config
-            setDoc(configRef, DEFAULT_CONFIG, { merge: true }).catch(() => {});
-          }
-        },
-        (err) => {
-          console.warn('Notice on config listener:', err);
-        }
-      );
-
-      return () => {
-        isSubscribed = false;
-        unsubscribe();
-      };
-    } catch (err) {
-      console.warn('Error setting up config listener:', err);
-    }
+    return success;
   }, []);
+
+  // Real-time synchronization with Firestore
+  useEffect(() => {
+    let isSubscribed = true;
+
+    // 1. Subscribe to /site_content/expenses_data
+    const docRef = doc(db, SITE_CONTENT_COLLECTION, EXPENSES_DOC);
+    const unsubscribeDoc = onSnapshot(
+      docRef,
+      async (snapshot) => {
+        if (!isSubscribed) return;
+
+        let cloudItems: ExpenseItem[] = [];
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (Array.isArray(data.items)) {
+            cloudItems = sanitizeExpenseList(data.items);
+          }
+        }
+
+        // Also check if /expenses collection has individual docs
+        try {
+          const colSnap = await getDocs(collection(db, EXPENSES_COLLECTION));
+          if (!colSnap.empty) {
+            const colItems: ExpenseItem[] = [];
+            colSnap.forEach(d => {
+              colItems.push(sanitizeExpenseList([d.data() as ExpenseItem])[0]);
+            });
+            cloudItems = mergeExpenseLists(colItems, cloudItems);
+          }
+        } catch {
+          // ignore collection query issues if offline
+        }
+
+        // Read local cached items to ensure NO unsaved expense is discarded
+        let localCached: ExpenseItem[] = [];
+        try {
+          const rawLocal = localStorage.getItem(LOCAL_EXPENSES_CACHE);
+          if (rawLocal) {
+            const parsed = JSON.parse(rawLocal);
+            if (Array.isArray(parsed)) {
+              localCached = sanitizeExpenseList(parsed);
+            }
+          }
+        } catch {}
+
+        // Merge cloud items with any local items
+        const finalMerged = mergeExpenseLists(cloudItems, localCached);
+
+        setExpenses(finalMerged);
+        persistLocalExpenses(finalMerged);
+        setIsCloudSynced(true);
+        setIsLoading(false);
+
+        // If local had items missing from cloud, push them to cloud now
+        const missingInCloud = localCached.filter(l => !cloudItems.some(c => c.id === l.id));
+        if (missingInCloud.length > 0) {
+          syncToCloud(finalMerged);
+        }
+      },
+      (error) => {
+        console.warn('Notice on expenses doc snapshot:', error);
+        if (isSubscribed) {
+          setIsLoading(false);
+          setIsCloudSynced(false);
+        }
+      }
+    );
+
+    // 2. Subscribe to real-time config (lockPin) in site_content/expenses_config
+    const configRef = doc(db, SITE_CONTENT_COLLECTION, CONFIG_DOC);
+    const unsubscribeConfig = onSnapshot(
+      configRef,
+      (snapshot) => {
+        if (!isSubscribed) return;
+        if (snapshot.exists()) {
+          const data = snapshot.data() as Partial<ExpensesConfig>;
+          const merged = { ...DEFAULT_CONFIG, ...data };
+          setConfig(merged);
+          try {
+            localStorage.setItem(LOCAL_CONFIG_CACHE, JSON.stringify(merged));
+          } catch {
+            // ignore
+          }
+        } else {
+          setDoc(configRef, DEFAULT_CONFIG, { merge: true }).catch(() => {});
+        }
+      },
+      (err) => {
+        console.warn('Notice on config listener:', err);
+      }
+    );
+
+    return () => {
+      isSubscribed = false;
+      unsubscribeDoc();
+      unsubscribeConfig();
+    };
+  }, [persistLocalExpenses, syncToCloud]);
 
   const addExpense = async (
     concept: string,
@@ -217,60 +293,63 @@ export const ExpensesProvider: React.FC<{ children: ReactNode }> = ({ children }
     const newId = `exp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const nowIso = new Date().toISOString();
 
-    const newExpense: ExpenseItem = {
+    const cleanNewExpense: ExpenseItem = {
       id: newId,
       concept: cleanConcept,
       amount: Number(amount.toFixed(2)),
       date: nowIso,
-      notes: notes?.trim() || undefined,
       createdAt: nowIso
     };
+    if (notes && notes.trim().length > 0) {
+      cleanNewExpense.notes = notes.trim();
+    }
 
-    // 1. Immediately update in-memory state
-    const updatedList = [newExpense, ...expenses];
+    // 1. Immediately update in-memory state and local persistence
+    const updatedList = [cleanNewExpense, ...expenses.filter(e => e.id !== newId)];
     setExpenses(updatedList);
-
-    // 2. Immediately save to LocalStorage (ensures persistence upon reload even offline)
     persistLocalExpenses(updatedList);
 
-    // 3. Save to primary Firestore document in site_content
-    let savedToCloud = false;
+    // 2. Persist to Firestore (both /expenses/{id} document and /site_content/expenses_data array)
     try {
-      await syncToCloudDoc(updatedList);
-      savedToCloud = true;
-    } catch (err) {
-      console.error('Error saving expenses list to Firestore doc:', err);
+      const saved = await syncToCloud(updatedList, cleanNewExpense);
+      if (saved) {
+        return {
+          success: true,
+          message: 'Gasto guardado en la base de datos.',
+          id: newId
+        };
+      } else {
+        return {
+          success: true,
+          message: 'Gasto registrado localmente (guardado pendiente).',
+          id: newId
+        };
+      }
+    } catch (err: any) {
+      console.error('Error in addExpense:', err);
+      return {
+        success: false,
+        message: 'Error al escribir en la base de datos: ' + (err?.message || 'Error de conexión')
+      };
     }
-
-    // 4. Also attempt to save to /expenses collection as redundant backup
-    try {
-      await setDoc(doc(db, LEGACY_EXPENSES_COLLECTION, newId), newExpense);
-    } catch {
-      // ignore if collection rules disallow it
-    }
-
-    return {
-      success: true,
-      message: savedToCloud ? 'Gasto guardado en la base de datos.' : 'Gasto registrado localmente.',
-      id: newId
-    };
   };
 
   const updateExpense = async (
     id: string,
     updatedData: Partial<ExpenseItem>
   ): Promise<{ success: boolean; message: string }> => {
-    const updatedList = expenses.map((e) => (e.id === id ? { ...e, ...updatedData } : e));
+    const cleanUpdate = sanitizeForFirestore(updatedData);
+    delete cleanUpdate.id; // do not mutate ID
+
+    const updatedList = expenses.map((e) => (e.id === id ? { ...e, ...cleanUpdate } : e));
     setExpenses(updatedList);
     persistLocalExpenses(updatedList);
 
-    await syncToCloudDoc(updatedList);
-
     try {
-      await updateDoc(doc(db, LEGACY_EXPENSES_COLLECTION, id), updatedData);
-    } catch {
-      // ignore
-    }
+      await updateDoc(doc(db, EXPENSES_COLLECTION, id), cleanUpdate).catch(() => {});
+    } catch {}
+
+    await syncToCloud(updatedList);
 
     return { success: true, message: 'Gasto actualizado correctamente.' };
   };
@@ -280,13 +359,11 @@ export const ExpensesProvider: React.FC<{ children: ReactNode }> = ({ children }
     setExpenses(updatedList);
     persistLocalExpenses(updatedList);
 
-    await syncToCloudDoc(updatedList);
-
     try {
-      await deleteDoc(doc(db, LEGACY_EXPENSES_COLLECTION, id));
-    } catch {
-      // ignore
-    }
+      await deleteDoc(doc(db, EXPENSES_COLLECTION, id)).catch(() => {});
+    } catch {}
+
+    await syncToCloud(updatedList);
 
     return { success: true, message: 'Gasto eliminado correctamente.' };
   };
@@ -312,7 +389,11 @@ export const ExpensesProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     try {
       const configRef = doc(db, SITE_CONTENT_COLLECTION, CONFIG_DOC);
-      await setDoc(configRef, newConfig, { merge: true });
+      await setDoc(configRef, {
+        lockPin: cleanPin,
+        currencySymbol: '$',
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
       return { success: true, message: 'Código de seguridad guardado en Firebase.' };
     } catch (err) {
       console.error('Error saving PIN to Firebase:', err);

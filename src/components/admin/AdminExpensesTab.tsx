@@ -234,7 +234,7 @@ export const AdminExpensesTab: React.FC = () => {
     const res = await updateExpense(editingExpense.id, {
       concept: editConcept.trim(),
       amount: Number(num.toFixed(2)),
-      notes: editNotes.trim() || undefined
+      notes: editNotes.trim() ? editNotes.trim() : undefined
     });
     showToast(res.message, res.success ? 'success' : 'error');
     setEditingExpense(null);

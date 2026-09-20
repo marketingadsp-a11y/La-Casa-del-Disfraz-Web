@@ -1,5 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useExpenses } from '../context/ExpensesContext';
+import { useSiteContent } from '../context/SiteContentContext';
 import { formatCurrency, formatDateTime } from '../utils/expensesExport';
 import { PWAInstallButton } from '../components/PWAInstallButton';
 import { 
@@ -18,6 +19,10 @@ interface RegisterExpensePageProps {
 
 export const RegisterExpensePage: React.FC<RegisterExpensePageProps> = ({ onNavigate }) => {
   const { expenses, addExpense, verifyLockPin, getCurrentMonthExpenses } = useExpenses();
+  const { content } = useSiteContent();
+  const whiteLogoUrl =
+    content.branding?.webLogoFooterUrl ||
+    'https://lacasadeldisfraz.mx/images/2024/04/12/logo-blanco-2024.png';
 
   // Form states
   const [concept, setConcept] = useState('');
@@ -232,21 +237,30 @@ export const RegisterExpensePage: React.FC<RegisterExpensePageProps> = ({ onNavi
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col justify-between selection:bg-zinc-700">
-      {/* Minimal Header */}
-      <header className="px-5 py-4 flex items-center justify-between border-b border-zinc-900 bg-zinc-950/80 backdrop-blur-md sticky top-0 z-20">
+      {/* Header with Logotipo Blanco */}
+      <header className="px-4 sm:px-5 py-3 flex items-center justify-between border-b border-zinc-900 bg-zinc-950/85 backdrop-blur-md sticky top-0 z-20">
         <button
           type="button"
           onClick={() => onNavigate('/')}
-          className="p-2 -ml-2 text-zinc-400 hover:text-white rounded-xl hover:bg-zinc-900 transition-colors cursor-pointer flex items-center gap-2"
-          aria-label="Volver"
+          className="p-2 -ml-2 text-zinc-400 hover:text-white rounded-xl hover:bg-zinc-900 transition-colors cursor-pointer flex items-center gap-1.5"
+          aria-label="Volver a la tienda"
         >
-          <ArrowLeft className="w-5 h-5" />
-          <span className="text-xs font-medium tracking-wide">Tienda</span>
+          <ArrowLeft className="w-4 h-4" />
+          <span className="text-xs font-medium tracking-wide hidden sm:inline">Tienda</span>
         </button>
 
-        <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400">
-          Gastos
-        </span>
+        {/* Center: Logotipo Blanco */}
+        <div className="flex items-center justify-center">
+          <img
+            src={whiteLogoUrl}
+            alt="La Casa del Disfraz"
+            className="h-8 sm:h-9 w-auto max-w-[135px] sm:max-w-[180px] object-contain cursor-pointer hover:opacity-90 transition-opacity"
+            onClick={() => onNavigate('/')}
+            onError={(e) => {
+              e.currentTarget.src = 'https://lacasadeldisfraz.mx/images/2024/04/12/logo-blanco-2024.png';
+            }}
+          />
+        </div>
 
         <div className="flex items-center gap-1.5">
           <PWAInstallButton
@@ -281,6 +295,12 @@ export const RegisterExpensePage: React.FC<RegisterExpensePageProps> = ({ onNavi
 
       {/* Main Content */}
       <main className="flex-1 max-w-sm w-full mx-auto px-5 py-6 flex flex-col justify-center">
+        {/* Top Header Title */}
+        <div className="text-center mb-5">
+          <h1 className="text-xs font-semibold uppercase tracking-widest text-zinc-400">
+            {isUnlocked ? 'Consulta de Gastos' : 'Registro de Gastos'}
+          </h1>
+        </div>
         {isUnlocked ? (
           /* Minimal Month Expenses View */
           <div className="space-y-5 animate-in fade-in duration-200">
