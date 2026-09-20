@@ -4,6 +4,7 @@ import { useAdminUsers } from '../context/AdminUsersContext';
 import { AdminExpensesTab } from '../components/admin/AdminExpensesTab';
 import { AdminSettingsTab } from '../components/admin/AdminSettingsTab';
 import { AdminIncomesTab } from '../components/admin/AdminIncomesTab';
+import { AdminCorteTab } from '../components/admin/AdminCorteTab';
 import { 
   SiteContent, 
   NavigationItem, 
@@ -50,7 +51,8 @@ import {
   Key,
   Receipt,
   Sliders,
-  TrendingUp
+  TrendingUp,
+  Scale
 } from 'lucide-react';
 
 interface AdminPageProps {
@@ -58,9 +60,10 @@ interface AdminPageProps {
 }
 
 type AdminTab = 
+  | 'corte'
   | 'ingresos'
-  | 'ajustes'
   | 'gastos'
+  | 'ajustes'
   | 'menu'
   | 'secciones'
   | 'usuarios'
@@ -703,6 +706,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
               </div>
 
               {[
+                { id: 'corte', label: 'Corte (Ganancias & Balance)', icon: Scale },
                 { id: 'ingresos', label: 'Ingresos (Loyverse POS)', icon: TrendingUp },
                 { id: 'gastos', label: 'Gastos & Egresos', icon: Receipt },
                 { id: 'ajustes', label: 'Ajustes & Ficha API', icon: Sliders },
@@ -1315,6 +1319,13 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
                   )}
                 </div>
               </div>
+            )}
+
+            {/* TAB: CORTE (INGRESOS MENOS GASTOS) */}
+            {activeTab === 'corte' && (
+              <AdminCorteTab
+                onNavigateToSettings={() => setActiveTab('ajustes')}
+              />
             )}
 
             {/* TAB: INGRESOS (LOYVERSE POS) */}
