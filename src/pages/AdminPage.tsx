@@ -167,17 +167,6 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
     });
   };
 
-  const handleReset = async () => {
-    if (window.confirm('¿Estás seguro de que deseas restablecer todos los textos y datos a los valores originales predeterminados?')) {
-      const res = await resetToDefaults();
-      setDraft(content);
-      setToastMessage({
-        text: '¡Sitio restablecido a los valores originales!',
-        type: 'success'
-      });
-    }
-  };
-
   // Helper for updating nested fields
   const updateStoreInfo = (field: string, value: any) => {
     setDraft(prev => ({
@@ -662,15 +651,6 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
             >
               <Eye className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Ver Sitio Web</span>
-            </button>
-
-            <button
-              onClick={handleReset}
-              className="px-3 py-2 bg-slate-800 hover:bg-rose-900/40 text-slate-300 hover:text-rose-300 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
-              title="Restablecer valores originales"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Restablecer</span>
             </button>
 
             <button
