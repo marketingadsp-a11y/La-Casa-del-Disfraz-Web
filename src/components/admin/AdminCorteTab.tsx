@@ -397,6 +397,7 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
 
     return {
       dailyList,
+      periodExpenses,
       totalIngresos,
       totalGastos,
       totalGanancia,
@@ -407,12 +408,13 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
   }, [receipts, expenses, periodStart, periodEnd, sortAsc]);
 
   const [isExportingPDF, setIsExportingPDF] = useState(false);
+  const [showExpensesList, setShowExpensesList] = useState(false);
 
-  // Export Corte to PDF (Letter Format)
-  const handleExportPDF = () => {
+  // Export Corte to PDF (Letter Format with Logo and Expenses List)
+  const handleExportPDF = async () => {
     try {
       setIsExportingPDF(true);
-      exportCorteToPDF(filteredData.dailyList, {
+      await exportCorteToPDF(filteredData.dailyList, {
         periodLabel,
         totalIngresos: filteredData.totalIngresos,
         totalGastos: filteredData.totalGastos,
@@ -421,10 +423,12 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
         totalTickets: filteredData.totalTickets,
         totalGastosCount: filteredData.totalGastosCount,
         storeAddress: 'Quintanar #189, Centro, Ciudad Guzmán, Tel: 341 146 0580',
-        storePhone: '341 146 0580'
+        storePhone: '341 146 0580',
+        logoUrl: content.branding?.webLogoUrl || 'https://lacasadeldisfraz.mx/images/logo-horizontal-web_one.png',
+        periodExpenses: filteredData.periodExpenses
       });
       setSyncFeedback({
-        text: '¡PDF descargado con éxito! Se generó el corte oficial en formato tamaño carta.',
+        text: '¡PDF descargado con éxito! Se generó el corte oficial con logotipo y desglose de gastos.',
         type: 'success'
       });
     } catch (err: any) {
@@ -957,23 +961,34 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
                               </span>
                             </td>
 
-                            {/* Gastos desplegados con montos */}
+                            {/* Gastos desplegados en formato listado */}
                             <td className="py-3 px-4 text-slate-700 text-xs">
                               {day.expenseItems && day.expenseItems.length > 0 ? (
-                                <div className="space-y-1">
+                                <div className="space-y-1.5 min-w-[180px]">
                                   {day.expenseItems.map((item, i) => (
-                                    <div key={item.id || i} className="flex items-center justify-between gap-2 text-[11px]">
-                                      <span className="font-medium text-slate-700 truncate max-w-[140px] sm:max-w-[200px]" title={item.concept}>
-                                        • {item.concept}
+                                    <div 
+                                      key={item.id || i} 
+                                      className="flex items-center justify-between gap-2 text-[11px] bg-rose-50/80 hover:bg-rose-100/60 border border-rose-100 px-2.5 py-1 rounded-lg transition-colors"
+                                    >
+                                      <span className="font-semibold text-slate-800 truncate max-w-[150px] sm:max-w-[210px] flex items-center gap-1.5" title={item.concept}>
+                                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0"></span>
+                                        <span className="truncate">{item.concept}</span>
                                       </span>
-                                      <span className="font-mono font-bold text-rose-700 shrink-0">
+                                      <span className="font-mono font-black text-rose-700 shrink-0 text-[11px]">
                                         {formatCurrency(item.amount)}
                                       </span>
                                     </div>
                                   ))}
                                 </div>
                               ) : day.conceptosGastos.length > 0 ? (
-                                <span className="text-slate-600 text-[11px]">{day.conceptosGastos.join(', ')}</span>
+                                <div className="space-y-1">
+                                  {day.conceptosGastos.map((c, i) => (
+                                    <div key={i} className="text-slate-600 text-[11px] flex items-center gap-1.5">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0"></span>
+                                      <span>{c}</span>
+                                    </div>
+                                  ))}
+                                </div>
                               ) : (
                                 <span className="text-slate-400 italic text-[11px]">Sin egresos</span>
                               )}
@@ -1065,6 +1080,95 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
               </table>
             </div>
           </div>
+
+          {/* 4. LISTADO DETALLADO DE GASTOS DEL CORTE (DESPLEGABLE) */}
+          {filteredData.periodExpenses && filteredData.periodExpenses.length > 0 && (
+            <div className="pt-2 no-print">
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl overflow-hidden transition-all shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => setShowExpensesList(!showExpensesList)}
+                  className="w-full p-4 flex items-center justify-between gap-3 text-left hover:bg-slate-100/80 transition cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold shrink-0">
+                      <Receipt className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-slate-800 text-xs sm:text-sm">
+                        Listado Detallado de Gastos del Período
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        {filteredData.totalGastosCount} egresos registrados • Total: <strong className="text-rose-700 font-mono">{formatCurrency(filteredData.totalGastos)}</strong>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-700 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-xs shrink-0">
+                    <span>{showExpensesList ? 'Ocultar Listado' : 'Ver Listado en Pantalla'}</span>
+                    {showExpensesList ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </div>
+                </button>
+
+                {showExpensesList && (
+                  <div className="border-t border-slate-200 p-4 sm:p-5 bg-white space-y-3 animate-in fade-in duration-150">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-slate-900 text-white font-bold text-[11px] uppercase tracking-wider">
+                            <th className="py-2.5 px-3">#</th>
+                            <th className="py-2.5 px-3">Fecha y Hora</th>
+                            <th className="py-2.5 px-3">Concepto</th>
+                            <th className="py-2.5 px-3">Notas / Detalle</th>
+                            <th className="py-2.5 px-3 text-right">Monto</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {filteredData.periodExpenses.map((exp, idx) => {
+                            let dateStr = '-';
+                            try {
+                              const d = new Date(exp.date);
+                              dateStr = d.toLocaleString('es-MX', {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              });
+                            } catch {}
+
+                            return (
+                              <tr key={exp.id || idx} className="hover:bg-rose-50/40 transition">
+                                <td className="py-2 px-3 text-slate-400 font-mono text-[11px]">{idx + 1}</td>
+                                <td className="py-2 px-3 text-slate-600 font-medium whitespace-nowrap">{dateStr}</td>
+                                <td className="py-2 px-3 font-bold text-slate-900">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0"></span>
+                                    <span>{exp.concept}</span>
+                                  </div>
+                                </td>
+                                <td className="py-2 px-3 text-slate-500 text-[11px]">{exp.notes || '-'}</td>
+                                <td className="py-2 px-3 text-right font-mono font-bold text-rose-700 whitespace-nowrap">
+                                  {formatCurrency(exp.amount)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-rose-50 font-bold text-rose-950 border-t-2 border-rose-200">
+                            <td colSpan={4} className="py-2.5 px-3 uppercase text-[11px]">Total de Egresos en el Período</td>
+                            <td className="py-2.5 px-3 text-right font-mono text-sm text-rose-800">
+                              {formatCurrency(filteredData.totalGastos)}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* 5. PIE DE PÁGINA */}
           <div className="pt-6 border-t-2 border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500">

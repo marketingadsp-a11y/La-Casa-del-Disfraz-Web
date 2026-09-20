@@ -6,6 +6,7 @@ import { AdminExpensesTab } from '../components/admin/AdminExpensesTab';
 import { AdminSettingsTab } from '../components/admin/AdminSettingsTab';
 import { AdminIncomesTab } from '../components/admin/AdminIncomesTab';
 import { AdminCorteTab } from '../components/admin/AdminCorteTab';
+import { AdminMobileGridMenu } from '../components/admin/AdminMobileGridMenu';
 import { 
   SiteContent, 
   NavigationItem, 
@@ -53,7 +54,9 @@ import {
   Receipt,
   Sliders,
   TrendingUp,
-  Scale
+  Scale,
+  LayoutGrid,
+  ArrowLeft
 } from 'lucide-react';
 
 interface AdminPageProps {
@@ -103,7 +106,14 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
   const [authError, setAuthError] = useState('');
 
   // Active sub-tab
-  const [activeTab, setActiveTab] = useState<AdminTab>('menu');
+  const [activeTab, setActiveTab] = useState<AdminTab>('corte');
+  // Mobile Grid Menu view: opens by default on mobile screens (viewport < 1024px)
+  const [showMobileMenu, setShowMobileMenu] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth < 1024;
+    }
+    return false;
+  });
 
   // Working copy of content for editing
   const [draft, setDraft] = useState<SiteContent>(content);
@@ -669,6 +679,21 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Mobile menu grid toggle button (visible on screens < 1024px) */}
+            <button
+              type="button"
+              onClick={() => setShowMobileMenu(!showMobileMenu)}
+              className={`lg:hidden px-3 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-sm ${
+                showMobileMenu
+                  ? 'bg-fuchsia-600 text-white shadow-fuchsia-500/30'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+              }`}
+              title="Menú de acceso rápido"
+            >
+              <LayoutGrid className="w-4 h-4 text-fuchsia-400" />
+              <span>{showMobileMenu ? 'Ver Pestaña' : 'Menú Cuadrícula'}</span>
+            </button>
+
             <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300">
               <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
               <span>Usuario: <strong className="text-white">{currentUser}</strong></span>
@@ -719,11 +744,43 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
         </div>
       )}
 
-      {/* Main Admin Workspace */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+      {/* Mobile Grid Menu View (When accessed from a phone or when user toggles Grid view) */}
+      <div className={`${showMobileMenu ? 'block' : 'hidden'} lg:hidden`}>
+        <AdminMobileGridMenu
+          activeTab={activeTab}
+          onSelectTab={(tabId) => {
+            setActiveTab(tabId as AdminTab);
+            setShowMobileMenu(false);
+          }}
+          onNavigateToPublicWeb={() => onNavigate('/')}
+          onLogout={handleLogout}
+          currentUser={currentUser}
+          logoUrl={draft.branding?.webLogoUrl || 'https://lacasadeldisfraz.mx/images/logo-horizontal-web_one.png'}
+        />
+      </div>
+
+      {/* Main Admin Workspace (Visible always on Desktop lg, and on Mobile when a tab is selected) */}
+      <div className={`max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8 ${showMobileMenu ? 'hidden lg:block' : 'block'}`}>
+        {/* Mobile Sub-Header: Back to Grid Menu Bar */}
+        <div className="lg:hidden mb-4 bg-white/90 backdrop-blur-md p-3 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => setShowMobileMenu(true)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-bold shadow-xs hover:bg-slate-800 transition active:scale-95 cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Volver al Menú Cuadrícula</span>
+          </button>
+
+          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 capitalize truncate">
+            <span className="w-2 h-2 rounded-full bg-fuchsia-600 shrink-0"></span>
+            <span className="truncate">{activeTab}</span>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Left Navigation Sidebar */}
-          <aside className="lg:col-span-3">
+          <aside className="hidden lg:block lg:col-span-3">
             <div className="bg-white rounded-3xl p-3 border border-slate-200 shadow-sm sticky top-20 space-y-1">
               <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
                 Navegación & Secciones
