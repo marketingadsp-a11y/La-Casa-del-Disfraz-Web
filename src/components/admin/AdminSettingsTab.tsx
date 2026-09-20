@@ -11,9 +11,16 @@ import {
   Sparkles, 
   Info,
   Copy,
-  CheckCheck
+  CheckCheck,
+  Key,
+  Database,
+  RefreshCw,
+  AlertCircle,
+  CheckCircle2,
+  Lock
 } from 'lucide-react';
-import { SiteContent, SiteBranding } from '../../types/siteContent';
+import { SiteContent, SiteBranding, LoyverseConfig } from '../../types/siteContent';
+import { testLoyverseToken } from '../../utils/loyverseClient';
 
 interface AdminSettingsTabProps {
   draft: SiteContent;
@@ -39,9 +46,23 @@ export const AdminSettingsTab: React.FC<AdminSettingsTabProps> = ({
     pwaShortName: 'LaCasaDisfraz'
   };
 
+  const loyverse = draft.loyverse || {
+    apiToken: '',
+    storeId: '',
+    autoSync: true,
+    lastSyncTime: ''
+  };
+
   const [copiedLink, setCopiedLink] = useState(false);
   const [logoTestError, setLogoTestError] = useState(false);
   const [pwaTestError, setPwaTestError] = useState(false);
+
+  // Loyverse test status
+  const [isTestingLoyverse, setIsTestingLoyverse] = useState(false);
+  const [loyverseTestFeedback, setLoyverseTestFeedback] = useState<{
+    status: 'success' | 'error';
+    message: string;
+  } | null>(null);
 
   const updateBrandingField = (field: keyof SiteBranding, value: string) => {
     onChange((prev) => ({
@@ -55,6 +76,43 @@ export const AdminSettingsTab: React.FC<AdminSettingsTabProps> = ({
         [field]: value
       }
     }));
+  };
+
+  const updateLoyverseField = (field: keyof LoyverseConfig, value: any) => {
+    onChange((prev) => ({
+      ...prev,
+      loyverse: {
+        apiToken: '',
+        storeId: '',
+        autoSync: true,
+        lastSyncTime: '',
+        ...(prev.loyverse || {}),
+        [field]: value
+      }
+    }));
+    if (field === 'apiToken') {
+      setLoyverseTestFeedback(null);
+    }
+  };
+
+  const handleTestLoyverse = async () => {
+    if (!loyverse.apiToken?.trim()) {
+      setLoyverseTestFeedback({
+        status: 'error',
+        message: 'Ingresa primero la Ficha de Acceso de Loyverse para probar la conexión.'
+      });
+      return;
+    }
+
+    setIsTestingLoyverse(true);
+    setLoyverseTestFeedback(null);
+
+    const result = await testLoyverseToken(loyverse.apiToken);
+    setIsTestingLoyverse(false);
+    setLoyverseTestFeedback({
+      status: result.success ? 'success' : 'error',
+      message: result.message
+    });
   };
 
   const copyGastosUrl = () => {
@@ -410,6 +468,132 @@ export const AdminSettingsTab: React.FC<AdminSettingsTabProps> = ({
               <li>Funciona en Computadoras (Chrome / Edge &gt; Instalar aplicación).</li>
               <li>Soporta modo offline con Service Worker registrado.</li>
             </ul>
+          </div>
+        </div>
+      </div>
+
+      {/* 4. Conexión e Integración con Loyverse POS API */}
+      <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200 shadow-xs space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-slate-100 pb-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-xl bg-emerald-100 text-emerald-700">
+                <Key className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900">
+                4. Integración Loyverse POS (Módulo de Ingresos)
+              </h3>
+            </div>
+            <p className="text-xs text-slate-500 pl-9">
+              Conecta tu cuenta de punto de venta Loyverse para sincronizar ventas, recibos e ingresos en tiempo real.
+            </p>
+          </div>
+
+          <a
+            href="https://developer.loyverse.com/docs/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+          >
+            <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+            <span>Documentación Loyverse</span>
+          </a>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-bold text-slate-800 flex items-center justify-between mb-1.5">
+              <span className="flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-emerald-600" />
+                Ficha de Acceso Personal (Access Token de Loyverse)
+              </span>
+              <a
+                href="https://loyverse.com/help/developer/how-to-generate-an-access-token"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] text-fuchsia-600 hover:underline font-normal"
+              >
+                ¿Dónde obtener mi ficha de acceso?
+              </a>
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="password"
+                value={loyverse.apiToken}
+                onChange={(e) => updateLoyverseField('apiToken', e.target.value)}
+                placeholder="Ingresa tu Ficha de Acceso de Loyverse (ej. 1a2b3c4d...)"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-medium focus:outline-none focus:border-emerald-500 focus:bg-white transition-colors"
+              />
+              <button
+                type="button"
+                onClick={handleTestLoyverse}
+                disabled={isTestingLoyverse || !loyverse.apiToken.trim()}
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shrink-0 transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isTestingLoyverse ? 'animate-spin' : ''}`} />
+                <span>{isTestingLoyverse ? 'Probando...' : 'Probar Ficha'}</span>
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1">
+              En tu Back Office de Loyverse ve a <strong>Ajustes &gt; Fichas de acceso</strong> y genera un token con permisos de lectura.
+            </p>
+          </div>
+
+          {loyverseTestFeedback && (
+            <div
+              className={`p-3.5 rounded-2xl border text-xs flex items-start gap-2.5 animate-in fade-in ${
+                loyverseTestFeedback.status === 'success'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-rose-50 border-rose-200 text-rose-800'
+              }`}
+            >
+              {loyverseTestFeedback.status === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              )}
+              <div className="flex-1">
+                <span className="font-bold block">
+                  {loyverseTestFeedback.status === 'success' ? '¡Conexión Exitosa!' : 'Fallo en la prueba:'}
+                </span>
+                <span className="text-[11px] leading-relaxed">{loyverseTestFeedback.message}</span>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">
+                ID de Tienda (Opcional)
+              </label>
+              <input
+                type="text"
+                value={loyverse.storeId || ''}
+                onChange={(e) => updateLoyverseField('storeId', e.target.value)}
+                placeholder="Dejar vacío para incluir todas las tiendas"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono focus:outline-none focus:border-emerald-500 focus:bg-white"
+              />
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                Si manejas más de una sucursal en Loyverse, puedes filtrar solo los ingresos de esta tienda.
+              </p>
+            </div>
+
+            <div className="flex flex-col justify-center">
+              <label className="text-xs font-bold text-slate-700 block mb-1">
+                Sincronización Automática
+              </label>
+              <label className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={loyverse.autoSync !== false}
+                  onChange={(e) => updateLoyverseField('autoSync', e.target.checked)}
+                  className="rounded text-emerald-600 focus:ring-emerald-500 h-4 w-4"
+                />
+                <span className="text-xs font-medium text-slate-700">
+                  Sincronizar ingresos automáticamente al abrir la pestaña
+                </span>
+              </label>
+            </div>
           </div>
         </div>
       </div>

@@ -62,6 +62,12 @@ export const SiteContentProvider: React.FC<{ children: ReactNode }> = ({ childre
                 pwaAppName: data.branding?.pwaAppName || DEFAULT_SITE_CONTENT.branding?.pwaAppName,
                 pwaShortName: data.branding?.pwaShortName || DEFAULT_SITE_CONTENT.branding?.pwaShortName,
               },
+              loyverse: {
+                apiToken: data.loyverse?.apiToken ?? DEFAULT_SITE_CONTENT.loyverse?.apiToken ?? '',
+                storeId: data.loyverse?.storeId ?? DEFAULT_SITE_CONTENT.loyverse?.storeId ?? '',
+                autoSync: data.loyverse?.autoSync ?? DEFAULT_SITE_CONTENT.loyverse?.autoSync ?? true,
+                lastSyncTime: data.loyverse?.lastSyncTime ?? DEFAULT_SITE_CONTENT.loyverse?.lastSyncTime ?? ''
+              },
               theme: { ...DEFAULT_SITE_CONTENT.theme, ...(data.theme || {}) },
               announcement: { ...DEFAULT_SITE_CONTENT.announcement, ...(data.announcement || {}) },
               storeInfo: { 

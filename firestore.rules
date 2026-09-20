@@ -31,5 +31,17 @@ service cloud.firestore {
       allow read: if true;
       allow write: if true;
     }
+
+    // Loyverse Incomes & Receipts collection
+    match /loyverse_receipts/{receiptId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Loyverse sync metadata
+    match /loyverse_sync/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
   }
 }

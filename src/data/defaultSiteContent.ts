@@ -9,6 +9,12 @@ export const DEFAULT_SITE_CONTENT: SiteContent = {
     pwaAppName: 'La Casa del Disfraz',
     pwaShortName: 'LaCasaDisfraz'
   },
+  loyverse: {
+    apiToken: '',
+    storeId: '',
+    autoSync: true,
+    lastSyncTime: ''
+  },
   theme: {
     primaryColor: 'fuchsia',
     heroTheme: 'classic-fuchsia'

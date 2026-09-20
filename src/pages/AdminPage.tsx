@@ -3,6 +3,7 @@ import { useSiteContent } from '../context/SiteContentContext';
 import { useAdminUsers } from '../context/AdminUsersContext';
 import { AdminExpensesTab } from '../components/admin/AdminExpensesTab';
 import { AdminSettingsTab } from '../components/admin/AdminSettingsTab';
+import { AdminIncomesTab } from '../components/admin/AdminIncomesTab';
 import { 
   SiteContent, 
   NavigationItem, 
@@ -48,7 +49,8 @@ import {
   X,
   Key,
   Receipt,
-  Sliders
+  Sliders,
+  TrendingUp
 } from 'lucide-react';
 
 interface AdminPageProps {
@@ -56,6 +58,7 @@ interface AdminPageProps {
 }
 
 type AdminTab = 
+  | 'ingresos'
   | 'ajustes'
   | 'gastos'
   | 'menu'
@@ -700,8 +703,9 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
               </div>
 
               {[
-                { id: 'ajustes', label: 'Ajustes & PWA (Logotipos)', icon: Sliders },
+                { id: 'ingresos', label: 'Ingresos (Loyverse POS)', icon: TrendingUp },
                 { id: 'gastos', label: 'Gastos & Egresos', icon: Receipt },
+                { id: 'ajustes', label: 'Ajustes & Ficha API', icon: Sliders },
                 { id: 'menu', label: 'Menú Público de la Web', icon: MenuIcon },
                 { id: 'secciones', label: 'Páginas Dinámicas (/seccion)', icon: Navigation },
                 { id: 'usuarios', label: 'Usuarios CyC (Cristobal)', icon: Users },
@@ -1311,6 +1315,13 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
                   )}
                 </div>
               </div>
+            )}
+
+            {/* TAB: INGRESOS (LOYVERSE POS) */}
+            {activeTab === 'ingresos' && (
+              <AdminIncomesTab
+                onNavigateToSettings={() => setActiveTab('ajustes')}
+              />
             )}
 
             {/* TAB: AJUSTES & PWA LOGOTIPOS */}

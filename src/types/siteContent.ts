@@ -192,9 +192,17 @@ export interface SiteBranding {
   pwaShortName?: string;
 }
 
+export interface LoyverseConfig {
+  apiToken: string; // Ficha de acceso personal de Loyverse API
+  storeId?: string; // ID de tienda opcional
+  autoSync?: boolean; // Sincronización automática al abrir el módulo
+  lastSyncTime?: string; // Última sincronización realizada
+}
+
 export interface SiteContent {
   updatedAt: string;
   branding?: SiteBranding;
+  loyverse?: LoyverseConfig;
   theme: SiteTheme;
   announcement: SiteAnnouncement;
   storeInfo: SiteStoreInfo;

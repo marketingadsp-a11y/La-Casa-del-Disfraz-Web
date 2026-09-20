@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { SiteContentProvider, useSiteContent } from './context/SiteContentContext';
 import { AdminUsersProvider } from './context/AdminUsersContext';
 import { ExpensesProvider } from './context/ExpensesContext';
+import { IncomesProvider } from './context/IncomesContext';
 import { AnnouncementBar } from './components/AnnouncementBar';
 import { Header } from './components/Header';
 import { HeroBanner } from './components/HeroBanner';
@@ -178,7 +179,9 @@ export default function App() {
     <SiteContentProvider>
       <AdminUsersProvider>
         <ExpensesProvider>
-          <AppContent />
+          <IncomesProvider>
+            <AppContent />
+          </IncomesProvider>
         </ExpensesProvider>
       </AdminUsersProvider>
     </SiteContentProvider>
