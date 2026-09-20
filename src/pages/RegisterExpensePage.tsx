@@ -37,8 +37,14 @@ export const RegisterExpensePage: React.FC<RegisterExpensePageProps> = ({ onNavi
   const amountInputRef = useRef<HTMLInputElement>(null);
   const successTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Clear timer on unmount
+  // Clear timer on unmount and remember target route for PWA
   useEffect(() => {
+    try {
+      localStorage.setItem('pwa_target_route', '/registrogastos');
+    } catch {
+      // ignore
+    }
+
     return () => {
       if (successTimerRef.current) {
         clearTimeout(successTimerRef.current);

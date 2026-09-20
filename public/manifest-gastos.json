@@ -3,7 +3,7 @@
   "name": "Registro de Gastos - La Casa del Disfraz",
   "short_name": "Gastos LCD",
   "description": "App para registro rápido de gastos y egresos diarios de La Casa del Disfraz en Ciudad Guzmán.",
-  "start_url": "/registrogastos",
+  "start_url": "/registrogastos?source=pwa",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",

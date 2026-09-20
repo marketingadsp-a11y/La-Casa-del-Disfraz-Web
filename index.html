@@ -16,7 +16,18 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="LaCasaDisfraz" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="manifest" id="app-manifest" href="/manifest.json" />
+    <script>
+      (function() {
+        var p = window.location.pathname || '';
+        var isGastos = p === '/registrogastos' || p.indexOf('/registrogastos') === 0;
+        var mLink = document.createElement('link');
+        mLink.rel = 'manifest';
+        mLink.id = 'app-manifest';
+        mLink.href = isGastos ? '/manifest-gastos.json' : '/manifest.json';
+        document.head.appendChild(mLink);
+      })();
+    </script>
+    <noscript><link rel="manifest" href="/manifest.json" /></noscript>
     <link rel="icon" type="image/png" href="https://lacasadeldisfraz.mx/images/logo-horizontal-web_one.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

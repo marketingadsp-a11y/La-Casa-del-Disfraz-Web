@@ -1,5 +1,5 @@
 // Service Worker for La Casa del Disfraz PWA
-const CACHE_NAME = 'lcd-pwa-v1';
+const CACHE_NAME = 'lcd-pwa-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/registrogastos',

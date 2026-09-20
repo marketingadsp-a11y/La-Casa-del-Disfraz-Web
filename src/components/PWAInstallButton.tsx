@@ -18,6 +18,12 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
   const [isInstalling, setIsInstalling] = useState(false);
 
   const handleInstallClick = async () => {
+    try {
+      localStorage.setItem('pwa_target_route', targetRoute);
+    } catch {
+      // ignore
+    }
+
     if (isIOS) {
       setShowIOSModal(true);
       return;

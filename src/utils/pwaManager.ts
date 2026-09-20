@@ -29,73 +29,26 @@ export function updatePWAManifestForRoute(
 ) {
   if (typeof document === 'undefined') return;
 
-  const isGastosRoute = route === '/registrogastos';
+  const isGastosRoute = route === '/registrogastos' || route.startsWith('/registrogastos');
   const customIcon = branding?.pwaIconUrl?.trim();
   const baseIcon = customIcon || '/pwa-512x512.png';
 
-  // Revoke previous blob if any
-  if (currentBlobUrl) {
-    try {
-      URL.revokeObjectURL(currentBlobUrl);
-    } catch {
-      // ignore
-    }
-    currentBlobUrl = null;
-  }
-
-  const manifestData = {
-    id: isGastosRoute ? '/registrogastos' : '/',
-    name: isGastosRoute
-      ? 'Registro de Gastos - La Casa del Disfraz'
-      : (branding?.pwaAppName || 'La Casa del Disfraz'),
-    short_name: isGastosRoute
-      ? 'Gastos LCD'
-      : (branding?.pwaShortName || 'LaCasaDisfraz'),
-    description: isGastosRoute
-      ? 'App de registro rápido de gastos y egresos diarios para La Casa del Disfraz.'
-      : 'Renta y venta de disfraces en Ciudad Guzmán, Jalisco.',
-    start_url: isGastosRoute ? '/registrogastos' : '/',
-    scope: '/',
-    display: 'standalone',
-    orientation: 'portrait-primary',
-    theme_color: '#701a75',
-    background_color: '#ffffff',
-    icons: [
-      {
-        src: customIcon || '/pwa-192x192.png',
-        sizes: '192x192',
-        type: 'image/png',
-        purpose: 'any'
-      },
-      {
-        src: customIcon || '/pwa-512x512.png',
-        sizes: '512x512',
-        type: 'image/png',
-        purpose: 'any'
-      },
-      {
-        src: customIcon || '/pwa-maskable-512x512.png',
-        sizes: '512x512',
-        type: 'image/png',
-        purpose: 'maskable'
-      }
-    ]
-  };
-
   try {
-    const stringified = JSON.stringify(manifestData, null, 2);
-    const blob = new Blob([stringified], { type: 'application/manifest+json' });
-    currentBlobUrl = URL.createObjectURL(blob);
-
     let manifestLink = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
     if (!manifestLink) {
       manifestLink = document.createElement('link');
       manifestLink.rel = 'manifest';
+      manifestLink.id = 'app-manifest';
       document.head.appendChild(manifestLink);
     }
-    manifestLink.href = currentBlobUrl;
+    
+    // IMPORTANT: Chromium requires valid http(s) URL for manifest install prompts
+    const targetManifest = isGastosRoute ? '/manifest-gastos.json' : '/manifest.json';
+    if (manifestLink.getAttribute('href') !== targetManifest) {
+      manifestLink.setAttribute('href', targetManifest);
+    }
 
-    // Also update apple-touch-icon
+    // Update apple-touch-icon
     let appleIcon = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]');
     if (!appleIcon) {
       appleIcon = document.createElement('link');
@@ -103,6 +56,12 @@ export function updatePWAManifestForRoute(
       document.head.appendChild(appleIcon);
     }
     appleIcon.href = baseIcon;
+
+    // Update apple web app title
+    let appleTitle = document.querySelector<HTMLMetaElement>('meta[name="apple-mobile-web-app-title"]');
+    if (appleTitle) {
+      appleTitle.content = isGastosRoute ? 'Gastos LCD' : (branding?.pwaShortName || 'LaCasaDisfraz');
+    }
 
     // Update favicon
     let favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');

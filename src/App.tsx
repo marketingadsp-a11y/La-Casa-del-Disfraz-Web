@@ -21,7 +21,32 @@ import { registerServiceWorker, updatePWAManifestForRoute } from './utils/pwaMan
 
 function AppContent() {
   const [currentPath, setCurrentPath] = useState<string>(() => {
-    return window.location.pathname || '/';
+    const rawPath = window.location.pathname || '/';
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as unknown as { standalone?: boolean }).standalone === true ||
+      document.referrer.includes('android-app://') ||
+      window.location.search.includes('source=pwa');
+
+    // When launched as a standalone PWA application
+    if (isStandalone) {
+      if (rawPath.startsWith('/registrogastos')) {
+        return '/registrogastos';
+      }
+
+      // If the OS opened root '/' but the user installed it targeting expenses
+      try {
+        const pwaTarget = localStorage.getItem('pwa_target_route');
+        if (pwaTarget === '/registrogastos' && (rawPath === '/' || rawPath === '')) {
+          window.history.replaceState({}, '', '/registrogastos');
+          return '/registrogastos';
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return rawPath;
   });
   const { content } = useSiteContent();
 
