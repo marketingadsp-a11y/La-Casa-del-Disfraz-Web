@@ -37,6 +37,7 @@ interface AdminIncomesTabProps {
 export const AdminIncomesTab: React.FC<AdminIncomesTabProps> = ({ onNavigateToSettings }) => {
   const { 
     receipts, 
+    isLoading,
     isSyncing, 
     error, 
     lastSyncTime, 
@@ -193,6 +194,14 @@ export const AdminIncomesTab: React.FC<AdminIncomesTabProps> = ({ onNavigateToSe
         </div>
       </div>
 
+      {/* Cloud loading indicator */}
+      {isLoading && (
+        <div className="p-4 bg-emerald-50/90 rounded-2xl border border-emerald-300 text-xs font-bold text-emerald-900 flex items-center gap-3 animate-in fade-in">
+          <RefreshCw className="w-4 h-4 text-emerald-600 animate-spin shrink-0" />
+          <span>Consultando y descargando datos históricos de ingresos desde la Base de Datos en la Nube (Cloud Firestore)...</span>
+        </div>
+      )}
+
       {/* Sync feedback notice */}
       {syncNotice && (
         <div className={`p-4 rounded-2xl border text-xs font-bold flex items-center gap-3 animate-in fade-in ${
@@ -209,8 +218,8 @@ export const AdminIncomesTab: React.FC<AdminIncomesTabProps> = ({ onNavigateToSe
         </div>
       )}
 
-      {/* Token missing alert box */}
-      {!hasToken && (
+      {/* Token missing alert box (only shown if there are no receipts in DB yet) */}
+      {!hasToken && receipts.length === 0 && (
         <div className="p-6 bg-amber-50 rounded-3xl border-2 border-amber-300/80 space-y-3">
           <div className="flex items-start gap-3">
             <AlertCircle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />

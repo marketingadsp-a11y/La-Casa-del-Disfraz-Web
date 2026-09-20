@@ -1,10 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useSiteContent } from './SiteContentContext';
 import { LoyverseReceipt, IncomeDateFilter, IncomeReportSummary } from '../types/incomes';
 import { fetchLoyverseReceipts } from '../utils/loyverseClient';
-import { sanitizeReceiptForFirestore } from '../utils/sanitizeFirestore';
+import { sanitizeReceiptForFirestore, compactLoyverseReceipt, chunkArray } from '../utils/sanitizeFirestore';
 
 const LOCAL_RECEIPTS_CACHE = 'lcd_loyverse_receipts_cache_v1';
 const LOCAL_LAST_SYNC_CACHE = 'lcd_loyverse_last_sync_v1';
@@ -53,42 +53,98 @@ export const IncomesProvider: React.FC<{ children: ReactNode }> = ({ children })
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load any previously synced receipts from Firestore on initialization
+  // Real-time synchronization with Firestore cloud database
   useEffect(() => {
     let isMounted = true;
-    const loadFromFirestore = async () => {
-      try {
-        const docRef = doc(db, LOYVERSE_COLLECTION, LOYVERSE_SYNC_DOC);
-        const snap = await getDoc(docRef);
-        if (snap.exists() && isMounted) {
-          const data = snap.data();
-          if (Array.isArray(data.receipts) && data.receipts.length > 0) {
-            setReceipts(data.receipts);
+    let lastLoadedUpdatedAt: string | null = null;
+
+    // If local cache is empty, indicate loading state
+    if (receipts.length === 0) {
+      setIsLoading(true);
+    }
+
+    const syncDocRef = doc(db, LOYVERSE_COLLECTION, LOYVERSE_SYNC_DOC);
+    const unsubscribe = onSnapshot(
+      syncDocRef,
+      async (snap) => {
+        if (!isMounted) return;
+
+        if (!snap.exists()) {
+          setIsLoading(false);
+          return;
+        }
+
+        const data = snap.data();
+        const updatedAt = data.updatedAt || data.lastSyncTime || 'synced';
+
+        // Skip re-fetching chunks if already loaded this exact version
+        if (lastLoadedUpdatedAt === updatedAt && receipts.length > 0) {
+          setIsLoading(false);
+          return;
+        }
+
+        try {
+          setIsLoading(true);
+          let loadedReceipts: LoyverseReceipt[] = [];
+
+          if (data.chunkCount && typeof data.chunkCount === 'number' && data.chunkCount > 0) {
+            // Load chunk documents in parallel
+            const chunkPromises = [];
+            for (let i = 0; i < data.chunkCount; i++) {
+              chunkPromises.push(getDoc(doc(db, LOYVERSE_COLLECTION, `loyverse_chunk_${i}`)));
+            }
+            const chunkSnaps = await Promise.all(chunkPromises);
+            for (const cSnap of chunkSnaps) {
+              if (cSnap.exists()) {
+                const cData = cSnap.data();
+                if (Array.isArray(cData.receipts)) {
+                  loadedReceipts.push(...cData.receipts);
+                }
+              }
+            }
+          } else if (Array.isArray(data.receipts) && data.receipts.length > 0) {
+            // Legacy single-doc fallback
+            loadedReceipts = data.receipts;
+          }
+
+          if (isMounted) {
+            lastLoadedUpdatedAt = updatedAt;
+            if (loadedReceipts.length > 0) {
+              setReceipts(loadedReceipts);
+              try {
+                localStorage.setItem(LOCAL_RECEIPTS_CACHE, JSON.stringify(loadedReceipts));
+              } catch {
+                // ignore quota
+              }
+            }
             if (data.lastSyncTime) {
               setLastSyncTime(data.lastSyncTime);
-            }
-            try {
-              localStorage.setItem(LOCAL_RECEIPTS_CACHE, JSON.stringify(data.receipts));
-              if (data.lastSyncTime) {
+              try {
                 localStorage.setItem(LOCAL_LAST_SYNC_CACHE, data.lastSyncTime);
+              } catch {
+                // ignore quota
               }
-            } catch {
-              // ignore quota
             }
           }
+        } catch (err) {
+          console.warn('Could not read Loyverse backup from Firestore:', err);
+        } finally {
+          if (isMounted) {
+            setIsLoading(false);
+          }
         }
-      } catch (err) {
-        console.warn('Could not read Loyverse backup from Firestore:', err);
+      },
+      (err) => {
+        console.warn('Firestore snapshot error on loyverse sync doc:', err);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
-    };
-
-    // If local cache was empty, attempt Firestore load
-    if (receipts.length === 0) {
-      loadFromFirestore();
-    }
+    );
 
     return () => {
       isMounted = false;
+      unsubscribe();
     };
   }, []);
 
@@ -148,17 +204,58 @@ export const IncomesProvider: React.FC<{ children: ReactNode }> = ({ children })
         console.warn('LocalStorage quota limit reached for receipts cache', err);
       }
 
-      // Persist directly into Firestore database (`site_content/loyverse_data`) for permanent cloud storage
+      // Persist directly into Firestore in lightweight chunks (max 120 items / ~50KB per doc)
+      // to completely bypass Firestore's 1MB (1,048,576 bytes) per-document limit
       try {
         const syncDocRef = doc(db, LOYVERSE_COLLECTION, LOYVERSE_SYNC_DOC);
-        const cleanReceipts = sorted.map(r => sanitizeReceiptForFirestore(r));
+        
+        // 1. Compact and sanitize receipts
+        const compactedReceipts = sorted.map(r => sanitizeReceiptForFirestore(compactLoyverseReceipt(r)));
+        
+        // 2. Chunk receipts into batches of 120 items (~50KB per doc)
+        const chunks = chunkArray(compactedReceipts, 120);
+
+        // 3. Check previous chunk count for cleanup if needed
+        let previousChunkCount = 0;
+        try {
+          const prevMetaSnap = await getDoc(syncDocRef);
+          if (prevMetaSnap.exists()) {
+            previousChunkCount = prevMetaSnap.data()?.chunkCount || 0;
+          }
+        } catch {
+          // ignore
+        }
+
+        // 4. Save all chunks in parallel
+        const saveChunkPromises = chunks.map((chunk, index) => {
+          const chunkDocRef = doc(db, LOYVERSE_COLLECTION, `loyverse_chunk_${index}`);
+          return setDoc(chunkDocRef, {
+            chunkIndex: index,
+            updatedAt: isoNow,
+            receipts: chunk
+          });
+        });
+        await Promise.all(saveChunkPromises);
+
+        // 5. Clean up old orphan chunks if the count decreased
+        if (previousChunkCount > chunks.length) {
+          const cleanupPromises = [];
+          for (let j = chunks.length; j < previousChunkCount; j++) {
+            cleanupPromises.push(deleteDoc(doc(db, LOYVERSE_COLLECTION, `loyverse_chunk_${j}`)).catch(() => {}));
+          }
+          await Promise.all(cleanupPromises);
+        }
+
+        // 6. Save root metadata document (without the massive receipts array)
         await setDoc(syncDocRef, {
           updatedAt: isoNow,
           lastSyncTime: isoNow,
           receiptsCount: sorted.length,
-          receipts: cleanReceipts
-        }, { merge: true });
-        console.log(`[Loyverse] Successfully saved ${sorted.length} receipts to Firestore document: site_content/loyverse_data`);
+          chunkCount: chunks.length,
+          chunkSize: 120
+        });
+
+        console.log(`[Loyverse] Successfully saved ${sorted.length} receipts across ${chunks.length} chunks to Firestore`);
       } catch (dbErr: any) {
         console.error('Error saving Loyverse receipts to Firestore:', dbErr);
       }

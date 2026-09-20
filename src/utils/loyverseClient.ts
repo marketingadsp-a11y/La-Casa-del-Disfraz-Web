@@ -34,8 +34,12 @@ async function doFetch(pathAndQuery: string, token: string): Promise<Response> {
       }
     });
 
-    // If proxy responded (even with 401 or other HTTP status from Loyverse), return it
-    if (res.status !== 404 && res.status !== 502) {
+    const contentType = res.headers.get('content-type') || '';
+    // If the server responded with HTML (e.g. index.html SPA rewrite on static hosts like Vercel),
+    // this is NOT a valid API response. Ignore this proxy and attempt fallback!
+    if (contentType.includes('text/html')) {
+      console.warn('Proxy returned text/html (SPA fallback detected). Falling back to direct Loyverse endpoint...');
+    } else if (res.status !== 404 && res.status !== 502) {
       return res;
     }
   } catch (proxyErr) {
@@ -76,6 +80,14 @@ export async function testLoyverseToken(token: string): Promise<{
       };
     }
 
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      return {
+        success: false,
+        message: 'El servidor de alojamiento respondió con HTML (página estática) en lugar de la API. Verifica que los endpoints /api/loyverse estén configurados.'
+      };
+    }
+
     if (!response.ok) {
       const errorText = await response.text();
       return {
@@ -92,7 +104,7 @@ export async function testLoyverseToken(token: string): Promise<{
     console.error('Loyverse token test error:', error);
     return {
       success: false,
-      message: `Error de conexión: ${error?.message || 'No se pudo contactar a api.loyverse.com. Puede ser debido a restricciones de CORS del navegador.'}`
+      message: `Error de conexión: ${error?.message || 'No se pudo contactar a api.loyverse.com.'}`
     };
   }
 }
@@ -154,16 +166,42 @@ export async function fetchLoyverseReceipts(
         };
       }
 
-      if (!response.ok) {
-        const errorText = await response.text();
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('text/html')) {
         return {
           success: false,
           receipts: allReceipts,
-          error: `Error de Loyverse API (HTTP ${response.status}): ${errorText.slice(0, 150)}`
+          error: 'El servidor de alojamiento devolvió HTML en lugar de JSON. Verifica la configuración de la función /api/loyverse.'
         };
       }
 
-      const data: LoyverseApiResponse = await response.json();
+      const responseText = await response.text();
+      let data: LoyverseApiResponse;
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        if (responseText.trim().startsWith('<')) {
+          return {
+            success: false,
+            receipts: allReceipts,
+            error: 'La ruta de la API devolvió HTML en lugar de datos JSON. Asegúrate de que las funciones de Vercel estén desplegadas.'
+          };
+        }
+        return {
+          success: false,
+          receipts: allReceipts,
+          error: `Respuesta de Loyverse no es JSON válido: ${responseText.slice(0, 100)}`
+        };
+      }
+
+      if (!response.ok) {
+        return {
+          success: false,
+          receipts: allReceipts,
+          error: `Error de Loyverse API (HTTP ${response.status}): ${responseText.slice(0, 150)}`
+        };
+      }
+
       const pageReceipts = data.receipts || [];
 
       allReceipts.push(...pageReceipts);
