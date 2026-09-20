@@ -281,14 +281,14 @@ export const RegisterExpensePage: React.FC<RegisterExpensePageProps> = ({ onNavi
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-sm w-full mx-auto px-5 py-6 flex flex-col justify-center">
+      <main className="flex-1 max-w-md w-full mx-auto px-5 py-6 flex flex-col justify-center">
         {/* Brand Logo & Header Title */}
         <div className="text-center mb-6 flex flex-col items-center">
-          <div className="mb-3 cursor-pointer group" onClick={() => onNavigate('/')}>
+          <div className="mb-4 cursor-pointer group w-full flex justify-center" onClick={() => onNavigate('/')}>
             <img
               src={whiteLogoUrl}
               alt="La Casa del Disfraz"
-              className="h-12 sm:h-14 w-auto max-w-[210px] sm:max-w-[240px] object-contain mx-auto transition-transform group-hover:scale-105 duration-200"
+              className="h-32 sm:h-40 md:h-44 w-auto max-w-[340px] sm:max-w-[420px] object-contain mx-auto transition-transform group-hover:scale-105 duration-200 drop-shadow-md"
               onError={(e) => {
                 e.currentTarget.src = 'https://lacasadeldisfraz.mx/images/2024/04/12/logo-blanco-2024.png';
               }}
