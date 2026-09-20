@@ -237,7 +237,7 @@ export const RegisterExpensePage: React.FC<RegisterExpensePageProps> = ({ onNavi
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col justify-between selection:bg-zinc-700">
-      {/* Header with Logotipo Blanco */}
+      {/* Minimal Header */}
       <header className="px-4 sm:px-5 py-3 flex items-center justify-between border-b border-zinc-900 bg-zinc-950/85 backdrop-blur-md sticky top-0 z-20">
         <button
           type="button"
@@ -246,21 +246,8 @@ export const RegisterExpensePage: React.FC<RegisterExpensePageProps> = ({ onNavi
           aria-label="Volver a la tienda"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span className="text-xs font-medium tracking-wide hidden sm:inline">Tienda</span>
+          <span className="text-xs font-medium tracking-wide">Tienda</span>
         </button>
-
-        {/* Center: Logotipo Blanco */}
-        <div className="flex items-center justify-center">
-          <img
-            src={whiteLogoUrl}
-            alt="La Casa del Disfraz"
-            className="h-8 sm:h-9 w-auto max-w-[135px] sm:max-w-[180px] object-contain cursor-pointer hover:opacity-90 transition-opacity"
-            onClick={() => onNavigate('/')}
-            onError={(e) => {
-              e.currentTarget.src = 'https://lacasadeldisfraz.mx/images/2024/04/12/logo-blanco-2024.png';
-            }}
-          />
-        </div>
 
         <div className="flex items-center gap-1.5">
           <PWAInstallButton
@@ -295,8 +282,18 @@ export const RegisterExpensePage: React.FC<RegisterExpensePageProps> = ({ onNavi
 
       {/* Main Content */}
       <main className="flex-1 max-w-sm w-full mx-auto px-5 py-6 flex flex-col justify-center">
-        {/* Top Header Title */}
-        <div className="text-center mb-5">
+        {/* Brand Logo & Header Title */}
+        <div className="text-center mb-6 flex flex-col items-center">
+          <div className="mb-3 cursor-pointer group" onClick={() => onNavigate('/')}>
+            <img
+              src={whiteLogoUrl}
+              alt="La Casa del Disfraz"
+              className="h-12 sm:h-14 w-auto max-w-[210px] sm:max-w-[240px] object-contain mx-auto transition-transform group-hover:scale-105 duration-200"
+              onError={(e) => {
+                e.currentTarget.src = 'https://lacasadeldisfraz.mx/images/2024/04/12/logo-blanco-2024.png';
+              }}
+            />
+          </div>
           <h1 className="text-xs font-semibold uppercase tracking-widest text-zinc-400">
             {isUnlocked ? 'Consulta de Gastos' : 'Registro de Gastos'}
           </h1>

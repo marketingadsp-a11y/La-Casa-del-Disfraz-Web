@@ -18,8 +18,8 @@ const EXPENSES_DOC = 'expenses_data';
 const CONFIG_DOC = 'expenses_config';
 const EXPENSES_COLLECTION = 'expenses';
 
-const LOCAL_EXPENSES_CACHE = 'lcd_expenses_cache';
-const LOCAL_CONFIG_CACHE = 'lcd_expenses_config_cache';
+const LOCAL_EXPENSES_CACHE = 'lcd_expenses_cache_v2';
+const LOCAL_CONFIG_CACHE = 'lcd_expenses_config_cache_v2';
 
 const DEFAULT_CONFIG: ExpensesConfig = {
   lockPin: '012004',
@@ -60,19 +60,21 @@ export const sanitizeForFirestore = (item: Partial<ExpenseItem>): Record<string,
 };
 
 export const sanitizeExpenseList = (list: ExpenseItem[]): ExpenseItem[] => {
-  return list.map(raw => {
-    const sanitized = sanitizeForFirestore(raw);
-    const item: ExpenseItem = {
-      id: sanitized.id || `exp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      concept: sanitized.concept || 'Gasto',
-      amount: sanitized.amount,
-      date: sanitized.date,
-      createdAt: sanitized.createdAt
-    };
-    if (sanitized.notes) item.notes = sanitized.notes;
-    if (sanitized.registeredBy) item.registeredBy = sanitized.registeredBy;
-    return item;
-  });
+  return list
+    .filter(raw => raw && raw.id !== 'exp-init-1')
+    .map(raw => {
+      const sanitized = sanitizeForFirestore(raw);
+      const item: ExpenseItem = {
+        id: sanitized.id || `exp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        concept: sanitized.concept || 'Gasto',
+        amount: sanitized.amount,
+        date: sanitized.date,
+        createdAt: sanitized.createdAt
+      };
+      if (sanitized.notes) item.notes = sanitized.notes;
+      if (sanitized.registeredBy) item.registeredBy = sanitized.registeredBy;
+      return item;
+    });
 };
 
 const mergeExpenseLists = (primary: ExpenseItem[], secondary: ExpenseItem[]): ExpenseItem[] => {
@@ -182,59 +184,33 @@ export const ExpensesProvider: React.FC<{ children: ReactNode }> = ({ children }
   useEffect(() => {
     let isSubscribed = true;
 
-    // 1. Subscribe to /site_content/expenses_data
+    // Subscribe directly to authoritative Firestore site_content/expenses_data
     const docRef = doc(db, SITE_CONTENT_COLLECTION, EXPENSES_DOC);
     const unsubscribeDoc = onSnapshot(
       docRef,
-      async (snapshot) => {
+      (snapshot) => {
         if (!isSubscribed) return;
 
         let cloudItems: ExpenseItem[] = [];
+        let rawHadInitItem = false;
         if (snapshot.exists()) {
           const data = snapshot.data();
           if (Array.isArray(data.items)) {
+            rawHadInitItem = data.items.some((i: any) => i && i.id === 'exp-init-1');
             cloudItems = sanitizeExpenseList(data.items);
           }
         }
 
-        // Also check if /expenses collection has individual docs
-        try {
-          const colSnap = await getDocs(collection(db, EXPENSES_COLLECTION));
-          if (!colSnap.empty) {
-            const colItems: ExpenseItem[] = [];
-            colSnap.forEach(d => {
-              colItems.push(sanitizeExpenseList([d.data() as ExpenseItem])[0]);
-            });
-            cloudItems = mergeExpenseLists(colItems, cloudItems);
-          }
-        } catch {
-          // ignore collection query issues if offline
-        }
-
-        // Read local cached items to ensure NO unsaved expense is discarded
-        let localCached: ExpenseItem[] = [];
-        try {
-          const rawLocal = localStorage.getItem(LOCAL_EXPENSES_CACHE);
-          if (rawLocal) {
-            const parsed = JSON.parse(rawLocal);
-            if (Array.isArray(parsed)) {
-              localCached = sanitizeExpenseList(parsed);
-            }
-          }
-        } catch {}
-
-        // Merge cloud items with any local items
-        const finalMerged = mergeExpenseLists(cloudItems, localCached);
-
-        setExpenses(finalMerged);
-        persistLocalExpenses(finalMerged);
+        // Firestore is the single authoritative source of truth:
+        // What is in Firestore is what exists (deletions are strictly honored)
+        setExpenses(cloudItems);
+        persistLocalExpenses(cloudItems);
         setIsCloudSynced(true);
         setIsLoading(false);
 
-        // If local had items missing from cloud, push them to cloud now
-        const missingInCloud = localCached.filter(l => !cloudItems.some(c => c.id === l.id));
-        if (missingInCloud.length > 0) {
-          syncToCloud(finalMerged);
+        // One-time self-healing: if Firestore doc still held the legacy seed item, clean it immediately
+        if (rawHadInitItem) {
+          syncToCloud(cloudItems);
         }
       },
       (error) => {
