@@ -40,13 +40,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
   };
 
   if (isInstalled) {
-    if (variant === 'minimal') return null;
-    return (
-      <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
-        <CheckCircle className="w-4 h-4 text-emerald-600" />
-        <span>App instalada en modo pantalla completa</span>
-      </div>
-    );
+    return null;
   }
 
   return (

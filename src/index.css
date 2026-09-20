@@ -5,11 +5,27 @@
   --font-body: 'Plus Jakarta Sans', sans-serif;
 }
 
-body {
+html, body {
   font-family: 'Plus Jakarta Sans', sans-serif;
+  /* Prevent double tap zoom delays and unwanted scaling */
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
 }
 
 .font-fun {
   font-family: 'Fredoka', cursive, sans-serif;
+}
+
+/* 
+ * Prevent iOS Safari and mobile Chrome auto-zoom on input focus.
+ * Mobile browsers automatically zoom into inputs with font-size < 16px.
+ * Setting font-size to at least 16px on mobile prevents this completely.
+ */
+@media screen and (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
 }
 

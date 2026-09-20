@@ -27,6 +27,14 @@ export const RegisterExpensePage: React.FC<RegisterExpensePageProps> = ({ onNavi
   const [showSuccessCheck, setShowSuccessCheck] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Duplicate warning modal state
+  const [duplicateWarning, setDuplicateWarning] = useState<{
+    dayFormatted: string;
+    cleanConcept: string;
+    cleanAmount: number;
+    notesText?: string;
+  } | null>(null);
+
   // Lock & Security PIN Modal states
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [pinInput, setPinInput] = useState('');
@@ -90,28 +98,23 @@ export const RegisterExpensePage: React.FC<RegisterExpensePageProps> = ({ onNavi
     amountInputRef.current?.focus();
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage(null);
-
-    const cleanConcept = concept.trim();
-    const cleanAmount = parseFloat(amountStr);
-
-    if (!cleanConcept) {
-      setErrorMessage('Ingresa el concepto');
-      conceptInputRef.current?.focus();
-      return;
-    }
-
-    if (isNaN(cleanAmount) || cleanAmount <= 0) {
-      setErrorMessage('Ingresa un monto válido');
-      amountInputRef.current?.focus();
-      return;
-    }
-
-    setIsSubmitting(true);
+  const formatDuplicateDay = (isoString: string): string => {
     try {
-      const res = await addExpense(cleanConcept, cleanAmount, notes);
+      const d = new Date(isoString);
+      if (isNaN(d.getTime())) return 'reciente';
+      const day = d.getDate();
+      const month = d.toLocaleDateString('es-MX', { month: 'long' });
+      return `${day} de ${month}`;
+    } catch {
+      return 'este mes';
+    }
+  };
+
+  const executeSaveExpense = async (cleanConcept: string, cleanAmount: number, notesText?: string) => {
+    setIsSubmitting(true);
+    setDuplicateWarning(null);
+    try {
+      const res = await addExpense(cleanConcept, cleanAmount, notesText);
       if (res.success) {
         // Clear fields immediately
         setConcept('');
@@ -140,6 +143,54 @@ export const RegisterExpensePage: React.FC<RegisterExpensePageProps> = ({ onNavi
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+
+    const cleanConcept = concept.trim();
+    const cleanAmount = parseFloat(amountStr);
+
+    if (!cleanConcept) {
+      setErrorMessage('Ingresa el concepto');
+      conceptInputRef.current?.focus();
+      return;
+    }
+
+    if (isNaN(cleanAmount) || cleanAmount <= 0) {
+      setErrorMessage('Ingresa un monto válido');
+      amountInputRef.current?.focus();
+      return;
+    }
+
+    // Check duplicate expense in the current calendar month only
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
+    const duplicate = expenses.find((exp) => {
+      if (!exp.concept || typeof exp.amount !== 'number') return false;
+      const sameConcept = exp.concept.trim().toLowerCase() === cleanConcept.toLowerCase();
+      const sameAmount = Math.abs(Number(exp.amount) - cleanAmount) < 0.001;
+      if (!sameConcept || !sameAmount) return false;
+
+      const expDate = new Date(exp.date);
+      if (isNaN(expDate.getTime())) return false;
+      return expDate.getFullYear() === currentYear && expDate.getMonth() === currentMonth;
+    });
+
+    if (duplicate) {
+      setDuplicateWarning({
+        dayFormatted: formatDuplicateDay(duplicate.date),
+        cleanConcept,
+        cleanAmount,
+        notesText: notes
+      });
+      return;
+    }
+
+    await executeSaveExpense(cleanConcept, cleanAmount, notes);
   };
 
   const handleVerifyPin = (e: React.FormEvent) => {
@@ -441,6 +492,52 @@ export const RegisterExpensePage: React.FC<RegisterExpensePageProps> = ({ onNavi
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Minimalist Duplicate Warning Modal */}
+      {duplicateWarning && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="max-w-xs w-full bg-zinc-900 border border-zinc-800 rounded-3xl p-5 space-y-4 shadow-2xl animate-in zoom-in-95">
+            <div className="space-y-2 text-center">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-400 mx-auto flex items-center justify-center border border-amber-500/20">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+              <p className="text-sm text-zinc-200 leading-relaxed">
+                Oye, este gasto se registró ya este mes, el día{' '}
+                <strong className="text-amber-300 font-semibold">
+                  {duplicateWarning.dayFormatted}
+                </strong>.
+              </p>
+              <div className="py-1 px-2.5 rounded-xl bg-zinc-950 text-xs text-zinc-400 font-mono inline-block border border-zinc-800/60">
+                {duplicateWarning.cleanConcept} • {formatCurrency(duplicateWarning.cleanAmount)}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setDuplicateWarning(null)}
+                className="py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => {
+                  executeSaveExpense(
+                    duplicateWarning.cleanConcept,
+                    duplicateWarning.cleanAmount,
+                    duplicateWarning.notesText
+                  );
+                }}
+                className="py-2.5 bg-amber-400 text-zinc-950 hover:bg-amber-300 rounded-xl text-xs font-bold transition-transform active:scale-95 cursor-pointer shadow-sm"
+              >
+                {isSubmitting ? 'Guardando...' : 'Registrar'}
+              </button>
+            </div>
           </div>
         </div>
       )}
