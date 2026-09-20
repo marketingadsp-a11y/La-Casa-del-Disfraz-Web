@@ -13,13 +13,29 @@ const LOCAL_LAST_SYNC_CACHE = 'lcd_loyverse_last_sync_v1';
 const LOYVERSE_SYNC_DOC = 'loyverse_data';
 const LOYVERSE_COLLECTION = 'site_content';
 
+export interface SyncFromLoyverseOptions {
+  mode?: 'incremental' | 'full';
+  force?: boolean;
+}
+
+export interface SyncFromLoyverseResult {
+  success: boolean;
+  count: number;
+  newCount?: number;
+  totalCount?: number;
+  mode: 'incremental' | 'full';
+  error?: string;
+  message?: string;
+}
+
 interface IncomesContextType {
   receipts: LoyverseReceipt[];
   isLoading: boolean;
   isSyncing: boolean;
+  syncingMode: 'incremental' | 'full' | null;
   error: string | null;
   lastSyncTime: string | null;
-  syncFromLoyverse: (options?: { force?: boolean }) => Promise<{ success: boolean; count: number; error?: string }>;
+  syncFromLoyverse: (options?: SyncFromLoyverseOptions) => Promise<SyncFromLoyverseResult>;
   calculateSummary: (filter: IncomeDateFilter, customStart?: string, customEnd?: string) => {
     filteredReceipts: LoyverseReceipt[];
     summary: IncomeReportSummary;
@@ -51,7 +67,11 @@ export const IncomesProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncingMode, setSyncingMode] = useState<'incremental' | 'full' | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const receiptsRef = React.useRef<LoyverseReceipt[]>(receipts);
+  receiptsRef.current = receipts;
 
   // Real-time synchronization with Firestore cloud database
   useEffect(() => {
@@ -150,29 +170,62 @@ export const IncomesProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   /**
    * Synchronize receipts from Loyverse POS API
+   * Supports 'incremental' (fetches only new receipts since latest saved receipt date)
+   * or 'full' (fetches all historical receipts from current and previous year).
    */
-  const syncFromLoyverse = useCallback(async (options?: { force?: boolean }): Promise<{
-    success: boolean;
-    count: number;
-    error?: string;
-  }> => {
+  const syncFromLoyverse = useCallback(async (options?: SyncFromLoyverseOptions): Promise<SyncFromLoyverseResult> => {
     const token = loyverseConfig?.apiToken?.trim();
 
     if (!token) {
       const msg = 'No has configurado la Ficha de Acceso de Loyverse. Ve a Ajustes de Admin para ingresarla.';
       setError(msg);
-      return { success: false, count: 0, error: msg };
+      return { 
+        success: false, 
+        count: 0, 
+        totalCount: receiptsRef.current.length, 
+        mode: options?.mode || 'incremental', 
+        error: msg 
+      };
     }
 
+    const requestedMode = options?.mode || 'incremental';
+    const currentReceipts = receiptsRef.current;
+
+    // Determine the latest receipt date currently saved in database
+    let latestReceiptDateMs: number | null = null;
+    for (const r of currentReceipts) {
+      const timeStr = r.created_at || r.receipt_date;
+      if (timeStr) {
+        const ms = new Date(timeStr).getTime();
+        if (!isNaN(ms) && (latestReceiptDateMs === null || ms > latestReceiptDateMs)) {
+          latestReceiptDateMs = ms;
+        }
+      }
+    }
+
+    // If incremental requested but database is empty, fallback to full sync
+    const effectiveMode: 'incremental' | 'full' = (requestedMode === 'incremental' && latestReceiptDateMs !== null)
+      ? 'incremental'
+      : 'full';
+
     setIsSyncing(true);
+    setSyncingMode(effectiveMode);
     setError(null);
 
     try {
-      // By default fetch receipts from current year/recent history
       const now = new Date();
       const currentYear = now.getFullYear();
-      // Start of previous year to have ample history for comparisons
-      const startDate = new Date(currentYear - 1, 0, 1).toISOString();
+
+      let startDate: string;
+      if (effectiveMode === 'incremental' && latestReceiptDateMs !== null) {
+        // Step back 2 minutes as a safety margin to catch receipts in transit or minor clock drift
+        startDate = new Date(latestReceiptDateMs - 2 * 60 * 1000).toISOString();
+      } else {
+        // Comprehensive historical range from start of previous year
+        startDate = new Date(currentYear - 1, 0, 1).toISOString();
+      }
+
+      console.log(`[Loyverse] Starting ${effectiveMode} sync with startDate = ${startDate}`);
 
       const res = await fetchLoyverseReceipts({
         apiToken: token,
@@ -183,39 +236,102 @@ export const IncomesProvider: React.FC<{ children: ReactNode }> = ({ children })
       if (!res.success) {
         setError(res.error || 'Error al sincronizar con Loyverse');
         setIsSyncing(false);
-        return { success: false, count: 0, error: res.error };
+        setSyncingMode(null);
+        return {
+          success: false,
+          count: 0,
+          totalCount: currentReceipts.length,
+          mode: effectiveMode,
+          error: res.error
+        };
       }
 
-      // Sort by created_at descending (newest first)
-      const sorted = [...res.receipts].sort((a, b) => {
-        const timeA = new Date(a.created_at || a.receipt_date || 0).getTime();
-        const timeB = new Date(b.created_at || b.receipt_date || 0).getTime();
-        return timeB - timeA;
-      });
-
-      setReceipts(sorted);
       const isoNow = new Date().toISOString();
+
+      // If incremental sync and Loyverse returned 0 items: database is already 100% up-to-date!
+      if (effectiveMode === 'incremental' && res.receipts.length === 0) {
+        setLastSyncTime(isoNow);
+        try {
+          localStorage.setItem(LOCAL_LAST_SYNC_CACHE, isoNow);
+          const syncDocRef = doc(db, LOYVERSE_COLLECTION, LOYVERSE_SYNC_DOC);
+          await setDoc(syncDocRef, {
+            updatedAt: isoNow,
+            lastSyncTime: isoNow,
+            receiptsCount: currentReceipts.length
+          }, { merge: true });
+        } catch (e) {
+          console.warn('Notice updating sync timestamp in Firestore:', e);
+        }
+
+        setIsSyncing(false);
+        setSyncingMode(null);
+        return {
+          success: true,
+          count: 0,
+          newCount: 0,
+          totalCount: currentReceipts.length,
+          mode: 'incremental',
+          message: 'La base de datos está al día. No hubo nuevas ventas en Loyverse.'
+        };
+      }
+
+      // Merge and deduplicate receipts by unique key (receipt_number or id)
+      let finalSorted: LoyverseReceipt[] = [];
+      let newlyAddedCount = 0;
+
+      if (effectiveMode === 'incremental' && currentReceipts.length > 0) {
+        const map = new Map<string, LoyverseReceipt>();
+        // 1. Seed existing receipts from database
+        currentReceipts.forEach(r => {
+          const key = r.receipt_number || r.id || `${r.created_at}_${r.total_money}`;
+          map.set(key, r);
+        });
+
+        // 2. Insert or update newly fetched receipts
+        res.receipts.forEach(r => {
+          const key = r.receipt_number || r.id || `${r.created_at}_${r.total_money}`;
+          if (!map.has(key)) {
+            newlyAddedCount++;
+          }
+          map.set(key, r);
+        });
+
+        finalSorted = Array.from(map.values()).sort((a, b) => {
+          const timeA = new Date(a.created_at || a.receipt_date || 0).getTime();
+          const timeB = new Date(b.created_at || b.receipt_date || 0).getTime();
+          return timeB - timeA;
+        });
+      } else {
+        // Full sync or initial database population
+        finalSorted = [...res.receipts].sort((a, b) => {
+          const timeA = new Date(a.created_at || a.receipt_date || 0).getTime();
+          const timeB = new Date(b.created_at || b.receipt_date || 0).getTime();
+          return timeB - timeA;
+        });
+        newlyAddedCount = finalSorted.length;
+      }
+
+      setReceipts(finalSorted);
       setLastSyncTime(isoNow);
 
       try {
-        localStorage.setItem(LOCAL_RECEIPTS_CACHE, JSON.stringify(sorted));
+        localStorage.setItem(LOCAL_RECEIPTS_CACHE, JSON.stringify(finalSorted));
         localStorage.setItem(LOCAL_LAST_SYNC_CACHE, isoNow);
       } catch (err) {
         console.warn('LocalStorage quota limit reached for receipts cache', err);
       }
 
-      // Persist directly into Firestore in lightweight chunks (max 120 items / ~50KB per doc)
-      // to completely bypass Firestore's 1MB (1,048,576 bytes) per-document limit
+      // Persist into Firestore in chunks of 120 items (~50KB per doc)
       try {
         const syncDocRef = doc(db, LOYVERSE_COLLECTION, LOYVERSE_SYNC_DOC);
         
         // 1. Compact and sanitize receipts
-        const compactedReceipts = sorted.map(r => sanitizeReceiptForFirestore(compactLoyverseReceipt(r)));
+        const compactedReceipts = finalSorted.map(r => sanitizeReceiptForFirestore(compactLoyverseReceipt(r)));
         
-        // 2. Chunk receipts into batches of 120 items (~50KB per doc)
+        // 2. Chunk receipts into batches of 120 items
         const chunks = chunkArray(compactedReceipts, 120);
 
-        // 3. Check previous chunk count for cleanup if needed
+        // 3. Check previous chunk count for cleanup
         let previousChunkCount = 0;
         try {
           const prevMetaSnap = await getDoc(syncDocRef);
@@ -237,7 +353,7 @@ export const IncomesProvider: React.FC<{ children: ReactNode }> = ({ children })
         });
         await Promise.all(saveChunkPromises);
 
-        // 5. Clean up old orphan chunks if the count decreased
+        // 5. Clean up old orphan chunks if chunk count decreased
         if (previousChunkCount > chunks.length) {
           const cleanupPromises = [];
           for (let j = chunks.length; j < previousChunkCount; j++) {
@@ -246,16 +362,17 @@ export const IncomesProvider: React.FC<{ children: ReactNode }> = ({ children })
           await Promise.all(cleanupPromises);
         }
 
-        // 6. Save root metadata document (without the massive receipts array)
+        // 6. Save root metadata document
         await setDoc(syncDocRef, {
           updatedAt: isoNow,
           lastSyncTime: isoNow,
-          receiptsCount: sorted.length,
+          receiptsCount: finalSorted.length,
           chunkCount: chunks.length,
-          chunkSize: 120
+          chunkSize: 120,
+          latestReceiptDate: finalSorted[0]?.created_at || isoNow
         });
 
-        console.log(`[Loyverse] Successfully saved ${sorted.length} receipts across ${chunks.length} chunks to Firestore`);
+        console.log(`[Loyverse] Sincronización (${effectiveMode}) guardada con éxito: ${finalSorted.length} recibos en ${chunks.length} chunks`);
       } catch (dbErr: any) {
         console.error('Error saving Loyverse receipts to Firestore:', dbErr);
       }
@@ -268,31 +385,42 @@ export const IncomesProvider: React.FC<{ children: ReactNode }> = ({ children })
             ...content.loyverse,
             lastSyncTime: isoNow
           }
-        }).catch(() => {
-          // ignore background update error
-        });
+        }).catch(() => {});
       }
 
       setIsSyncing(false);
-      return { success: true, count: sorted.length };
+      setSyncingMode(null);
+      return { 
+        success: true, 
+        count: res.receipts.length, 
+        newCount: newlyAddedCount,
+        totalCount: finalSorted.length,
+        mode: effectiveMode 
+      };
     } catch (err: any) {
       const msg = err?.message || 'Error inesperado al consultar Loyverse';
       setError(msg);
       setIsSyncing(false);
-      return { success: false, count: 0, error: msg };
+      setSyncingMode(null);
+      return { 
+        success: false, 
+        count: 0, 
+        totalCount: currentReceipts.length, 
+        mode: effectiveMode, 
+        error: msg 
+      };
     }
   }, [loyverseConfig?.apiToken, loyverseConfig?.storeId, content, saveContent]);
 
-  // Automatic sync on load if autoSync is enabled and token exists
+  // Automatic sync on load if autoSync is enabled and token exists (incremental by default)
   useEffect(() => {
     if (loyverseConfig?.apiToken?.trim() && loyverseConfig?.autoSync !== false) {
-      // If we haven't synced today, or if there are no cached receipts, run sync
       const now = Date.now();
       const lastSyncMs = lastSyncTime ? new Date(lastSyncTime).getTime() : 0;
       const hoursSinceLastSync = (now - lastSyncMs) / (1000 * 60 * 60);
 
       if (receipts.length === 0 || hoursSinceLastSync > 2) {
-        syncFromLoyverse();
+        syncFromLoyverse({ mode: 'incremental' });
       }
     }
   }, [loyverseConfig?.apiToken, loyverseConfig?.autoSync]);
@@ -497,6 +625,7 @@ export const IncomesProvider: React.FC<{ children: ReactNode }> = ({ children })
         receipts,
         isLoading,
         isSyncing,
+        syncingMode,
         error,
         lastSyncTime,
         syncFromLoyverse,

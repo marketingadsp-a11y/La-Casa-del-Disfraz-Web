@@ -7,7 +7,10 @@ import {
   Filter, 
   Printer, 
   FileSpreadsheet, 
+  FileDown,
   RefreshCw, 
+  RotateCcw,
+  Database,
   ArrowUpRight, 
   ArrowDownRight, 
   Percent, 
@@ -30,9 +33,16 @@ import { useSiteContent } from '../../context/SiteContentContext';
 import { IncomeDateFilter } from '../../types/incomes';
 import { ExpenseItem } from '../../types/expenses';
 import { formatCurrency } from '../../utils/expensesExport';
+import { exportCorteToPDF } from '../../utils/corteExport';
 
 interface AdminCorteTabProps {
   onNavigateToSettings: () => void;
+}
+
+interface DayExpenseItem {
+  id: string;
+  concept: string;
+  amount: number;
 }
 
 interface DayCorteData {
@@ -44,6 +54,7 @@ interface DayCorteData {
   gastos: number;
   gastosCount: number;
   conceptosGastos: string[];
+  expenseItems: DayExpenseItem[];
   ganancia: number;
   margen: number; // Porcentaje de ganancia del día
   status: 'ganancia' | 'deficit' | 'equilibrio';
@@ -83,6 +94,7 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
     receipts, 
     isLoading: isIncomesLoading, 
     isSyncing, 
+    syncingMode,
     syncFromLoyverse, 
     lastSyncTime 
   } = useIncomes();
@@ -106,16 +118,70 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
 
   const [syncFeedback, setSyncFeedback] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  const handleSyncClick = async () => {
+  // 1. Sincronización incremental (desde la última fecha de recibo registrada en la base de datos)
+  const handleSyncIncremental = async () => {
     setSyncFeedback(null);
-    const res = await syncFromLoyverse();
+    const res = await syncFromLoyverse({ mode: 'incremental' });
     if (res.success) {
-      setSyncFeedback({ text: `¡Sincronización completada! Se actualizaron ${res.count} recibos de Loyverse.`, type: 'success' });
+      const msg = res.count > 0
+        ? `¡Sincronización incremental exitosa! Se integraron ${res.count} ventas nuevas a la base de datos (Total: ${res.totalCount || receipts.length} registros).`
+        : `¡Base de datos al día! No hay nuevas ventas en Loyverse desde la última sincronización.`;
+      setSyncFeedback({ text: msg, type: 'success' });
     } else {
-      setSyncFeedback({ text: res.error || 'Error al sincronizar con Loyverse', type: 'error' });
+      setSyncFeedback({ text: res.error || 'Error en la sincronización incremental con Loyverse', type: 'error' });
     }
-    setTimeout(() => setSyncFeedback(null), 5000);
+    setTimeout(() => setSyncFeedback(null), 6000);
   };
+
+  // 2. Sincronización completa (descarga de todo el historial de Loyverse a la base de datos)
+  const handleSyncFull = async () => {
+    setSyncFeedback(null);
+    const res = await syncFromLoyverse({ mode: 'full' });
+    if (res.success) {
+      setSyncFeedback({ 
+        text: `¡Sincronización completa finalizada! Se descargaron y respaldaron ${res.totalCount || res.count} recibos históricos desde Loyverse.`, 
+        type: 'success' 
+      });
+    } else {
+      setSyncFeedback({ text: res.error || 'Error al re-sincronizar todo desde Loyverse', type: 'error' });
+    }
+    setTimeout(() => setSyncFeedback(null), 6000);
+  };
+
+  // Formatted status for sync time and latest receipt
+  const formattedLastSync = useMemo(() => {
+    if (!lastSyncTime) return 'Sin sincronizar';
+    try {
+      const d = new Date(lastSyncTime);
+      return d.toLocaleString('es-MX', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return lastSyncTime;
+    }
+  }, [lastSyncTime]);
+
+  const latestTicketDate = useMemo(() => {
+    if (!receipts || receipts.length === 0) return null;
+    const top = receipts[0];
+    const dStr = top.created_at || top.receipt_date;
+    if (!dStr) return null;
+    try {
+      const d = new Date(dStr);
+      return d.toLocaleString('es-MX', {
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return null;
+    }
+  }, [receipts]);
 
   // 1. Calculate Start and End timestamps for the selected period
   const { periodStart, periodEnd, periodLabel } = useMemo(() => {
@@ -219,6 +285,7 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
       gastos: number;
       gastosCount: number;
       conceptos: string[];
+      expenseList: DayExpenseItem[];
       rawDate: Date;
     }>();
 
@@ -237,7 +304,8 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
         ticketsCount: 0,
         gastos: 0,
         gastosCount: 0,
-        conceptos: [],
+        conceptos: [] as string[],
+        expenseList: [] as DayExpenseItem[],
         rawDate: new Date(yyyy, d.getMonth(), d.getDate(), 12, 0, 0)
       };
 
@@ -265,12 +333,19 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
         ticketsCount: 0,
         gastos: 0,
         gastosCount: 0,
-        conceptos: [],
+        conceptos: [] as string[],
+        expenseList: [] as DayExpenseItem[],
         rawDate: new Date(yyyy, d.getMonth(), d.getDate(), 12, 0, 0)
       };
 
-      entry.gastos += Number(e.amount || 0);
+      const amt = Number(e.amount || 0);
+      entry.gastos += amt;
       entry.gastosCount += 1;
+      entry.expenseList.push({
+        id: e.id,
+        concept: e.concept || 'Gasto no especificado',
+        amount: amt
+      });
       if (e.concept && !entry.conceptos.includes(e.concept)) {
         entry.conceptos.push(e.concept);
       }
@@ -294,6 +369,7 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
         gastos: data.gastos,
         gastosCount: data.gastosCount,
         conceptosGastos: data.conceptos,
+        expenseItems: (data as any).expenseList || [],
         ganancia,
         margen,
         status
@@ -330,6 +406,39 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
     };
   }, [receipts, expenses, periodStart, periodEnd, sortAsc]);
 
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
+
+  // Export Corte to PDF (Letter Format)
+  const handleExportPDF = () => {
+    try {
+      setIsExportingPDF(true);
+      exportCorteToPDF(filteredData.dailyList, {
+        periodLabel,
+        totalIngresos: filteredData.totalIngresos,
+        totalGastos: filteredData.totalGastos,
+        totalGanancia: filteredData.totalGanancia,
+        totalMargen: filteredData.totalMargen,
+        totalTickets: filteredData.totalTickets,
+        totalGastosCount: filteredData.totalGastosCount,
+        storeAddress: 'Quintanar #189, Centro, Ciudad Guzmán, Tel: 341 146 0580',
+        storePhone: '341 146 0580'
+      });
+      setSyncFeedback({
+        text: '¡PDF descargado con éxito! Se generó el corte oficial en formato tamaño carta.',
+        type: 'success'
+      });
+    } catch (err: any) {
+      console.error('Error generating PDF:', err);
+      setSyncFeedback({
+        text: 'Ocurrió un error al generar el PDF: ' + (err.message || 'Error desconocido'),
+        type: 'error'
+      });
+    } finally {
+      setIsExportingPDF(false);
+      setTimeout(() => setSyncFeedback(null), 5000);
+    }
+  };
+
   // Export Corte to Excel
   const handleExportExcel = () => {
     const sheetData: (string | number)[][] = [
@@ -350,6 +459,10 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
     ];
 
     filteredData.dailyList.forEach(day => {
+      const breakdownStr = day.expenseItems && day.expenseItems.length > 0
+        ? day.expenseItems.map(e => `${e.concept}: ${formatCurrency(e.amount)}`).join(' | ')
+        : (day.conceptosGastos.join(', ') || 'Sin gastos');
+
       sheetData.push([
         day.formattedDate,
         day.ingresos,
@@ -358,7 +471,7 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
         day.gastosCount,
         day.ganancia,
         `${day.margen.toFixed(1)}%`,
-        day.conceptosGastos.join(', ') || 'Sin gastos'
+        breakdownStr
       ]);
     });
 
@@ -394,9 +507,11 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
           body {
             background-color: #ffffff !important;
             color: #0f172a !important;
-            font-size: 11pt !important;
+            font-size: 8pt !important;
             margin: 0 !important;
             padding: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           header, aside, .no-print, nav, button {
             display: none !important;
@@ -412,14 +527,15 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
           .letter-sheet {
             box-shadow: none !important;
             border: none !important;
-            padding: 0 !important;
+            padding: 4mm !important;
             margin: 0 !important;
             width: 100% !important;
             background: white !important;
+            zoom: 0.8 !important;
           }
           @page {
             size: letter portrait;
-            margin: 12mm 15mm;
+            margin: 8mm 10mm;
           }
         }
       `}</style>
@@ -430,47 +546,53 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
         <div className="absolute bottom-0 left-1/3 w-60 h-60 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div className="space-y-2 max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-fuchsia-500/20 text-fuchsia-300 text-xs font-bold uppercase tracking-wider backdrop-blur-xs">
-              <Scale className="w-3.5 h-3.5" />
-              <span>Módulo de Corte • Balance Financiero</span>
-            </div>
-            <h2 className="text-xl sm:text-2xl font-fun font-bold text-white">
-              Corte de Caja: Ingresos menos Gastos
+          <div className="space-y-1 max-w-2xl">
+            <h2 className="text-2xl sm:text-3xl font-fun font-bold text-white">
+              Corte
             </h2>
-            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              Consolidación en tiempo real del flujo financiero: calcula la ganancia neta, evalúa el balance diario y genera la hoja oficial de corte en formato tamaño carta.
-            </p>
           </div>
 
           {/* Quick Action Buttons */}
-          <div className="flex flex-wrap items-center gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
             <button
-              onClick={handlePrint}
-              className="px-4 py-3 rounded-2xl bg-white text-slate-950 hover:bg-slate-100 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition active:scale-95 cursor-pointer"
-              title="Imprimir o guardar en PDF tamaño carta"
+              onClick={handleExportPDF}
+              disabled={isExportingPDF}
+              className="px-3.5 py-2.5 rounded-2xl bg-white text-slate-950 hover:bg-slate-100 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition active:scale-95 cursor-pointer disabled:opacity-50"
+              title="Descargar reporte oficial en formato PDF tamaño carta"
             >
-              <Printer className="w-4 h-4 text-fuchsia-700" />
-              <span>Imprimir Hoja Carta</span>
+              <FileDown className={`w-4 h-4 text-fuchsia-700 ${isExportingPDF ? 'animate-bounce' : ''}`} />
+              <span>{isExportingPDF ? 'Generando PDF...' : 'Exportar a PDF (Carta)'}</span>
             </button>
 
             <button
               onClick={handleExportExcel}
-              className="px-4 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition active:scale-95 cursor-pointer"
+              className="px-3.5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition active:scale-95 cursor-pointer"
               title="Descargar tabla en formato Excel"
             >
               <FileSpreadsheet className="w-4 h-4" />
               <span>Exportar Excel</span>
             </button>
 
+            {/* Botón 1: Sincronización incremental desde la base de datos a la fecha */}
             <button
-              onClick={handleSyncClick}
+              onClick={handleSyncIncremental}
               disabled={isSyncing || !hasToken}
-              className="px-4 py-3 rounded-2xl bg-fuchsia-600 hover:bg-fuchsia-500 disabled:opacity-50 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition active:scale-95 cursor-pointer"
-              title="Actualizar datos de Loyverse"
+              className="px-3.5 py-2.5 rounded-2xl bg-fuchsia-600 hover:bg-fuchsia-500 disabled:opacity-50 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition active:scale-95 cursor-pointer"
+              title="Sincronizar ventas nuevas desde la última fecha registrada en base de datos"
             >
-              <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>{isSyncing ? 'Sincronizando...' : 'Actualizar Loyverse'}</span>
+              <RefreshCw className={`w-4 h-4 ${isSyncing && syncingMode === 'incremental' ? 'animate-spin' : ''}`} />
+              <span>{isSyncing && syncingMode === 'incremental' ? 'Sincronizando...' : 'Sincronizar Recientes'}</span>
+            </button>
+
+            {/* Botón 2: Sincronizar todo de nuevo (descarga histórica completa) */}
+            <button
+              onClick={handleSyncFull}
+              disabled={isSyncing || !hasToken}
+              className="px-3.5 py-2.5 rounded-2xl bg-slate-800/90 hover:bg-slate-700/90 border border-white/20 disabled:opacity-50 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition active:scale-95 cursor-pointer"
+              title="Descargar y re-sincronizar todo el historial completo desde Loyverse"
+            >
+              <RotateCcw className={`w-4 h-4 ${isSyncing && syncingMode === 'full' ? 'animate-spin' : ''}`} />
+              <span>{isSyncing && syncingMode === 'full' ? 'Re-sincronizando...' : 'Sincronizar Todo de Nuevo'}</span>
             </button>
           </div>
         </div>
@@ -484,10 +606,18 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 text-emerald-300 bg-emerald-950/60 px-2.5 py-0.5 rounded-lg border border-emerald-500/20 text-[11px]">
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+            <div className="flex items-center gap-1.5 text-slate-200 bg-white/10 px-2.5 py-1 rounded-lg border border-white/10 text-[11px]">
+              <Database className="w-3.5 h-3.5 text-fuchsia-300" />
+              <span>BD: <strong className="text-white">{receipts.length} recibos</strong></span>
+              {latestTicketDate && (
+                <span className="text-slate-300 ml-1">· Último ticket: {latestTicketDate}</span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 text-emerald-300 bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-500/20 text-[11px]">
               <Sparkles className="w-3 h-3" />
-              <span>Datos sincronizados en Cloud Firestore</span>
+              <span>Última sync: <strong className="text-emerald-200">{formattedLastSync}</strong></span>
             </div>
           </div>
         </div>
@@ -616,33 +746,24 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
                     La Casa del Disfraz
                   </h1>
                   <p className="text-[11px] font-bold text-fuchsia-700 tracking-wider uppercase">
-                    Corte de Caja & Estado de Resultados
+                    INFORME GENERAL
                   </p>
                   <p className="text-[10px] text-slate-500">
-                    {content.storeInfo?.addressLine || 'Quintanar #189, Centro'}, {content.storeInfo?.cityState || 'Ciudad Guzmán, Jal.'} • Tel: {content.storeInfo?.phone || '341 146 0580'}
+                    Quintanar #189, Centro, Ciudad Guzmán, Tel: 341 146 0580
                   </p>
                 </div>
               </div>
 
               {/* Document Metadata Stamp */}
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-right text-xs space-y-1 sm:min-w-[220px]">
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-right text-xs space-y-1 sm:min-w-[200px]">
                 <div className="text-[10px] uppercase font-bold text-slate-400">
-                  Comprobante Oficial de Corte
+                  Informe Oficial de Corte
                 </div>
                 <div className="text-xs font-extrabold text-slate-800">
                   Período: <span className="text-fuchsia-700">{periodLabel}</span>
                 </div>
                 <div className="text-[11px] text-slate-500">
                   Emisión: {new Date().toLocaleDateString('es-MX')} {new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
-                </div>
-                <div className="pt-1">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                    filteredData.totalGanancia >= 0 
-                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
-                      : 'bg-rose-100 text-rose-800 border border-rose-300'
-                  }`}>
-                    {filteredData.totalGanancia >= 0 ? '● Balance Positivo (Superávit)' : '● Saldo en Déficit'}
-                  </span>
                 </div>
               </div>
             </div>
@@ -763,7 +884,7 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
                     <th className="py-3.5 px-4 text-right">Gastos</th>
                     <th className="py-3.5 px-4 text-right">Ganancia Neta</th>
                     <th className="py-3.5 px-4 text-center">Rentabilidad</th>
-                    <th className="py-3.5 px-4 text-left hidden sm:table-cell">Conceptos / Detalle</th>
+                    <th className="py-3.5 px-4 text-left">Desglose de Gastos</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -836,14 +957,25 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
                               </span>
                             </td>
 
-                            {/* Conceptos principales */}
-                            <td className="py-3 px-4 text-slate-600 text-xs hidden sm:table-cell max-w-xs truncate">
-                              {day.conceptosGastos.length > 0 ? (
-                                <span title={day.conceptosGastos.join(', ')}>
-                                  {day.conceptosGastos.join(', ')}
-                                </span>
+                            {/* Gastos desplegados con montos */}
+                            <td className="py-3 px-4 text-slate-700 text-xs">
+                              {day.expenseItems && day.expenseItems.length > 0 ? (
+                                <div className="space-y-1">
+                                  {day.expenseItems.map((item, i) => (
+                                    <div key={item.id || i} className="flex items-center justify-between gap-2 text-[11px]">
+                                      <span className="font-medium text-slate-700 truncate max-w-[140px] sm:max-w-[200px]" title={item.concept}>
+                                        • {item.concept}
+                                      </span>
+                                      <span className="font-mono font-bold text-rose-700 shrink-0">
+                                        {formatCurrency(item.amount)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : day.conceptosGastos.length > 0 ? (
+                                <span className="text-slate-600 text-[11px]">{day.conceptosGastos.join(', ')}</span>
                               ) : (
-                                <span className="text-slate-400 italic">Sin egresos registrados</span>
+                                <span className="text-slate-400 italic text-[11px]">Sin egresos</span>
                               )}
                             </td>
                           </tr>
@@ -852,7 +984,7 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
                           {isExpanded && (
                             <tr className="bg-slate-100/90 no-print">
                               <td colSpan={6} className="p-4">
-                                <div className="space-y-2 text-xs">
+                                <div className="space-y-3 text-xs">
                                   <div className="font-bold text-slate-800">
                                     Resumen del día {day.formattedDate}:
                                   </div>
@@ -866,16 +998,25 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
                                         Total de {day.ticketsCount} transacciones registradas en Loyverse POS.
                                       </p>
                                     </div>
-                                    <div className="bg-white p-3 rounded-xl border border-rose-200 space-y-1">
+                                    <div className="bg-white p-3 rounded-xl border border-rose-200 space-y-2">
                                       <div className="font-bold text-rose-800 flex items-center gap-1.5">
                                         <Receipt className="w-3.5 h-3.5" />
-                                        <span>Gastos Operativos ({formatCurrency(day.gastos)})</span>
+                                        <span>Gastos Desplegados ({formatCurrency(day.gastos)})</span>
                                       </div>
-                                      <p className="text-slate-600 text-[11px]">
-                                        {day.conceptosGastos.length > 0 
-                                          ? `Conceptos: ${day.conceptosGastos.join(', ')}` 
-                                          : 'No hubo salidas de dinero registradas en esta fecha.'}
-                                      </p>
+                                      {day.expenseItems && day.expenseItems.length > 0 ? (
+                                        <div className="divide-y divide-rose-100 pt-1">
+                                          {day.expenseItems.map((item, i) => (
+                                            <div key={item.id || i} className="py-1 flex items-center justify-between text-[11px]">
+                                              <span className="text-slate-700 font-medium">• {item.concept}</span>
+                                              <span className="font-mono font-bold text-rose-700">{formatCurrency(item.amount)}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <p className="text-slate-600 text-[11px]">
+                                          No hubo salidas de dinero registradas en esta fecha.
+                                        </p>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -925,27 +1066,18 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
             </div>
           </div>
 
-          {/* 5. PIE DE PÁGINA Y SELLO FORMAL PARA TAMAÑO CARTA */}
-          <div className="pt-6 border-t-2 border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-6 text-xs text-slate-500">
-            <div className="space-y-1">
+          {/* 5. PIE DE PÁGINA */}
+          <div className="pt-6 border-t-2 border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500">
+            <div className="space-y-0.5">
               <div className="font-bold text-slate-800 uppercase tracking-wider text-[10px]">
-                Validación y Control Interno
+                Informe Oficial de Corte
               </div>
-              <p className="text-[11px] text-slate-500 leading-relaxed">
-                Este reporte consolida las ventas registradas mediante el sistema Loyverse POS y los egresos capturados en el módulo de gastos de La Casa del Disfraz.
+              <p className="text-[11px] text-slate-500">
+                Consolidado de ventas registradas mediante Loyverse POS y egresos de La Casa del Disfraz.
               </p>
-              <div className="pt-4 flex items-center gap-2 text-[10px] text-slate-400">
-                <span>Generado desde Panel CyC • Documento de Uso Administrativo</span>
-              </div>
             </div>
-
-            <div className="flex flex-col items-center sm:items-end justify-center">
-              <div className="w-48 border-b-2 border-slate-400 pt-8 pb-1 text-center font-bold text-slate-800 text-xs">
-                Firma Administración
-              </div>
-              <div className="text-[10px] text-slate-400 mt-1">
-                Ing. Cyntia Cárdenas / Cristobal
-              </div>
+            <div className="text-[10px] text-slate-400 sm:text-right">
+              Panel Administrativo CyC
             </div>
           </div>
 

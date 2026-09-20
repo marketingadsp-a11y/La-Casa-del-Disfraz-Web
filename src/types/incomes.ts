@@ -29,6 +29,7 @@ export interface LoyverseLineItem {
 }
 
 export interface LoyverseReceipt {
+  id?: string;
   receipt_number: string;
   receipt_type: 'SALE' | 'REFUND' | string;
   created_at: string;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSiteContent } from '../context/SiteContentContext';
 import { useAdminUsers } from '../context/AdminUsersContext';
+import { useIncomes } from '../context/IncomesContext';
 import { AdminExpensesTab } from '../components/admin/AdminExpensesTab';
 import { AdminSettingsTab } from '../components/admin/AdminSettingsTab';
 import { AdminIncomesTab } from '../components/admin/AdminIncomesTab';
@@ -88,6 +89,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
     authenticate: authenticateAdminUser,
     isCloudSynced: isUsersCloudSynced 
   } = useAdminUsers();
+  const { syncFromLoyverse } = useIncomes();
 
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -148,12 +150,34 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
 
     const authResult = authenticateAdminUser(cleanUser, cleanPass);
     if (authResult.success && authResult.user) {
+      const loggedUser = authResult.user;
       sessionStorage.setItem('lcd_admin_auth', 'true');
-      sessionStorage.setItem('lcd_admin_user', authResult.user.username);
-      setCurrentUser(authResult.user.username);
+      sessionStorage.setItem('lcd_admin_user', loggedUser.username);
+      setCurrentUser(loggedUser.username);
       setIsAuthenticated(true);
       setAuthError('');
       setAuthPassword('');
+
+      // Sincronización automática a Loyverse desde donde se quedó a la fecha
+      if (content.loyverse?.apiToken?.trim()) {
+        setToastMessage({
+          text: `Iniciando sesión... Sincronizando ventas recientes desde Loyverse.`,
+          type: 'success'
+        });
+
+        syncFromLoyverse({ mode: 'incremental' }).then((res) => {
+          if (res.success) {
+            setToastMessage({
+              text: res.newCount && res.newCount > 0
+                ? `¡Bienvenido, ${loggedUser.name || loggedUser.username}! Se sincronizaron ${res.newCount} nuevas ventas desde Loyverse.`
+                : `¡Bienvenido, ${loggedUser.name || loggedUser.username}! Base de datos de ventas al día.`,
+              type: 'success'
+            });
+          }
+        }).catch((err) => {
+          console.warn('Error en auto-sincronización tras inicio de sesión:', err);
+        });
+      }
     } else {
       setAuthError(authResult.error || 'Usuario o contraseña incorrectos.');
     }
@@ -706,7 +730,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
               </div>
 
               {[
-                { id: 'corte', label: 'Corte (Ganancias & Balance)', icon: Scale },
+                { id: 'corte', label: 'Corte', icon: Scale },
                 { id: 'ingresos', label: 'Ingresos (Loyverse POS)', icon: TrendingUp },
                 { id: 'gastos', label: 'Gastos & Egresos', icon: Receipt },
                 { id: 'ajustes', label: 'Ajustes & Ficha API', icon: Sliders },
