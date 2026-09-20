@@ -644,8 +644,8 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 pb-24">
-      {/* Admin Top Sticky Bar */}
-      <header className="sticky top-0 z-40 bg-slate-900 text-white border-b border-slate-800 px-4 sm:px-6 py-3 shadow-md">
+      {/* Admin Top Sticky Bar - Hidden on mobile devices */}
+      <header className="hidden lg:block sticky top-0 z-40 bg-slate-900 text-white border-b border-slate-800 px-4 sm:px-6 py-3 shadow-md">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-fuchsia-500 to-amber-500 flex items-center justify-center font-fun font-bold text-white shadow-sm">
@@ -772,9 +772,21 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
             <span>Volver al Menú Cuadrícula</span>
           </button>
 
-          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 capitalize truncate">
-            <span className="w-2 h-2 rounded-full bg-fuchsia-600 shrink-0"></span>
-            <span className="truncate">{activeTab}</span>
+          <div className="flex items-center gap-2">
+            <span className="hidden sm:inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 capitalize truncate">
+              <span className="w-2 h-2 rounded-full bg-fuchsia-600 shrink-0"></span>
+              <span className="truncate">{activeTab}</span>
+            </span>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving}
+              className="px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white text-xs font-bold rounded-xl shadow-xs transition-all active:scale-95 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+              title="Guardar cambios"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>{isSaving ? 'Guardando...' : 'Guardar'}</span>
+            </button>
           </div>
         </div>
 
