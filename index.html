@@ -13,7 +13,7 @@
     <meta name="theme-color" content="#701a75" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="LaCasaDisfraz" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <script>
@@ -25,6 +25,12 @@
         mLink.id = 'app-manifest';
         mLink.href = isGastos ? '/manifest-gastos.json' : '/manifest.json';
         document.head.appendChild(mLink);
+
+        // Dynamic theme-color for Safari / iOS notch & toolbar
+        var themeMeta = document.querySelector('meta[name="theme-color"]');
+        if (themeMeta && isGastos) {
+          themeMeta.setAttribute('content', '#09090b');
+        }
       })();
     </script>
     <noscript><link rel="manifest" href="/manifest.json" /></noscript>

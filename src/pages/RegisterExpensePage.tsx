@@ -50,7 +50,7 @@ export const RegisterExpensePage: React.FC<RegisterExpensePageProps> = ({ onNavi
   const amountInputRef = useRef<HTMLInputElement>(null);
   const successTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Clear timer on unmount and remember target route for PWA
+  // Clear timer on unmount, remember target route for PWA, and manage iOS status bar theme color
   useEffect(() => {
     try {
       localStorage.setItem('pwa_target_route', '/registrogastos');
@@ -58,9 +58,20 @@ export const RegisterExpensePage: React.FC<RegisterExpensePageProps> = ({ onNavi
       // ignore
     }
 
+    // Set iOS Safari / Chrome theme-color to dark #09090b
+    const themeMeta = document.querySelector('meta[name="theme-color"]');
+    const prevTheme = themeMeta ? themeMeta.getAttribute('content') : null;
+    if (themeMeta) {
+      themeMeta.setAttribute('content', '#09090b');
+    }
+
     return () => {
       if (successTimerRef.current) {
         clearTimeout(successTimerRef.current);
+      }
+      // Restore previous theme-color when leaving /registrogastos
+      if (themeMeta && prevTheme) {
+        themeMeta.setAttribute('content', prevTheme);
       }
     };
   }, []);
@@ -236,47 +247,49 @@ export const RegisterExpensePage: React.FC<RegisterExpensePageProps> = ({ onNavi
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col justify-between selection:bg-zinc-700">
-      {/* Minimal Header */}
-      <header className="px-4 sm:px-5 py-3 flex items-center justify-between border-b border-zinc-900 bg-zinc-950/85 backdrop-blur-md sticky top-0 z-20">
-        <button
-          type="button"
-          onClick={() => onNavigate('/')}
-          className="p-2 -ml-2 text-zinc-400 hover:text-white rounded-xl hover:bg-zinc-900 transition-colors cursor-pointer flex items-center gap-1.5"
-          aria-label="Volver a la tienda"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-xs font-medium tracking-wide">Tienda</span>
-        </button>
-
-        <div className="flex items-center gap-1.5">
-          <PWAInstallButton
-            variant="compact"
-            appName="Gastos LCD"
-            targetRoute="/registrogastos"
-          />
-
-          {/* Lock button */}
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col justify-between selection:bg-zinc-700 pl-safe pr-safe">
+      {/* Minimal Header with iOS Notch & Dynamic Island Safe Area */}
+      <header className="pt-safe border-b border-zinc-900 bg-zinc-950/90 backdrop-blur-md sticky top-0 z-20">
+        <div className="px-4 sm:px-5 py-3 flex items-center justify-between">
           <button
             type="button"
-            onClick={() => {
-              if (isUnlocked) {
-                setIsUnlocked(false);
-              } else {
-                setIsPinModalOpen(true);
-                setPinError('');
-                setPinInput('');
-              }
-            }}
-            className={`p-2 rounded-xl transition-all cursor-pointer ${
-              isUnlocked
-                ? 'text-emerald-400 bg-emerald-500/10'
-                : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
-            }`}
-            aria-label={isUnlocked ? 'Bloquear consulta' : 'Desbloquear consulta'}
+            onClick={() => onNavigate('/')}
+            className="p-2 -ml-2 text-zinc-400 hover:text-white rounded-xl hover:bg-zinc-900 transition-colors cursor-pointer flex items-center gap-1.5"
+            aria-label="Volver a la tienda"
           >
-            {isUnlocked ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+            <ArrowLeft className="w-4 h-4" />
+            <span className="text-xs font-medium tracking-wide">Tienda</span>
           </button>
+
+          <div className="flex items-center gap-1.5">
+            <PWAInstallButton
+              variant="compact"
+              appName="Gastos LCD"
+              targetRoute="/registrogastos"
+            />
+
+            {/* Lock button */}
+            <button
+              type="button"
+              onClick={() => {
+                if (isUnlocked) {
+                  setIsUnlocked(false);
+                } else {
+                  setIsPinModalOpen(true);
+                  setPinError('');
+                  setPinInput('');
+                }
+              }}
+              className={`p-2 rounded-xl transition-all cursor-pointer ${
+                isUnlocked
+                  ? 'text-emerald-400 bg-emerald-500/10'
+                  : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+              }`}
+              aria-label={isUnlocked ? 'Bloquear consulta' : 'Desbloquear consulta'}
+            >
+              {isUnlocked ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -559,8 +572,8 @@ export const RegisterExpensePage: React.FC<RegisterExpensePageProps> = ({ onNavi
         </div>
       )}
 
-      {/* Minimal Footer */}
-      <footer className="py-4 text-center text-[10px] text-zinc-600 tracking-wider">
+      {/* Minimal Footer with iOS Home Bar Safe Area */}
+      <footer className="py-4 pb-safe text-center text-[10px] text-zinc-600 tracking-wider">
         La Casa del Disfraz
       </footer>
     </div>
