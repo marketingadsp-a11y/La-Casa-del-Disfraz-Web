@@ -17,12 +17,23 @@ import { PrivacyPage } from './pages/PrivacyPage';
 import { AdminPage } from './pages/AdminPage';
 import { RegisterExpensePage } from './pages/RegisterExpensePage';
 import { DynamicCustomPage } from './pages/DynamicCustomPage';
+import { registerServiceWorker, updatePWAManifestForRoute } from './utils/pwaManager';
 
 function AppContent() {
   const [currentPath, setCurrentPath] = useState<string>(() => {
     return window.location.pathname || '/';
   });
   const { content } = useSiteContent();
+
+  // Register PWA service worker once on mount
+  useEffect(() => {
+    registerServiceWorker();
+  }, []);
+
+  // Update dynamic PWA manifest and icons whenever route or custom branding changes
+  useEffect(() => {
+    updatePWAManifestForRoute(currentPath, content.branding);
+  }, [currentPath, content.branding]);
 
   // Synchronize browser history and back/forward buttons
   useEffect(() => {

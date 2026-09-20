@@ -184,8 +184,17 @@ export interface CustomPageSection {
   updatedAt: string;
 }
 
+export interface SiteBranding {
+  webLogoUrl: string;
+  webLogoFooterUrl?: string;
+  pwaIconUrl: string;
+  pwaAppName?: string;
+  pwaShortName?: string;
+}
+
 export interface SiteContent {
   updatedAt: string;
+  branding?: SiteBranding;
   theme: SiteTheme;
   announcement: SiteAnnouncement;
   storeInfo: SiteStoreInfo;

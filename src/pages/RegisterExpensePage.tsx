@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { useExpenses } from '../context/ExpensesContext';
 import { formatCurrency, formatDateTime } from '../utils/expensesExport';
+import { PWAInstallButton } from '../components/PWAInstallButton';
 import { 
   Lock, 
   Unlock, 
@@ -190,27 +191,35 @@ export const RegisterExpensePage: React.FC<RegisterExpensePageProps> = ({ onNavi
           Gastos
         </span>
 
-        {/* Lock button */}
-        <button
-          type="button"
-          onClick={() => {
-            if (isUnlocked) {
-              setIsUnlocked(false);
-            } else {
-              setIsPinModalOpen(true);
-              setPinError('');
-              setPinInput('');
-            }
-          }}
-          className={`p-2 -mr-2 rounded-xl transition-all cursor-pointer ${
-            isUnlocked
-              ? 'text-emerald-400 bg-emerald-500/10'
-              : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
-          }`}
-          aria-label={isUnlocked ? 'Bloquear consulta' : 'Desbloquear consulta'}
-        >
-          {isUnlocked ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
-        </button>
+        <div className="flex items-center gap-1.5">
+          <PWAInstallButton
+            variant="compact"
+            appName="Gastos LCD"
+            targetRoute="/registrogastos"
+          />
+
+          {/* Lock button */}
+          <button
+            type="button"
+            onClick={() => {
+              if (isUnlocked) {
+                setIsUnlocked(false);
+              } else {
+                setIsPinModalOpen(true);
+                setPinError('');
+                setPinInput('');
+              }
+            }}
+            className={`p-2 rounded-xl transition-all cursor-pointer ${
+              isUnlocked
+                ? 'text-emerald-400 bg-emerald-500/10'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+            }`}
+            aria-label={isUnlocked ? 'Bloquear consulta' : 'Desbloquear consulta'}
+          >
+            {isUnlocked ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+          </button>
+        </div>
       </header>
 
       {/* Main Content */}
@@ -365,6 +374,15 @@ export const RegisterExpensePage: React.FC<RegisterExpensePageProps> = ({ onNavi
                 {isSubmitting ? 'Guardando...' : 'Registrar'}
               </button>
             </form>
+
+            {/* PWA Direct Installation Card */}
+            <div className="pt-4 border-t border-zinc-900 mt-6">
+              <PWAInstallButton
+                variant="card"
+                appName="Gastos LCD"
+                targetRoute="/registrogastos"
+              />
+            </div>
           </div>
         )}
       </main>

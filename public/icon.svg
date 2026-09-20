@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#701a75" />
+      <stop offset="50%" stop-color="#c026d3" />
+      <stop offset="100%" stop-color="#db2777" />
+    </linearGradient>
+    <linearGradient id="maskGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="50%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-opacity="0.35" />
+    </filter>
+  </defs>
+
+  <!-- Background rounded squircle with safe margin -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+
+  <!-- Inner glowing ring -->
+  <rect x="16" y="16" width="480" height="480" rx="96" fill="none" stroke="#ffffff" stroke-width="4" stroke-opacity="0.2" />
+
+  <!-- Center Icon: Theater Carnival Mask & Stars (La Casa del Disfraz) -->
+  <g filter="url(#shadow)">
+    <!-- Primary Mask -->
+    <path d="M120 180 C120 140, 200 130, 256 130 C312 130, 392 140, 392 180 C392 260, 340 330, 256 350 C172 330, 120 260, 120 180 Z" fill="url(#maskGold)" />
+    
+    <!-- Mask Eye Cutouts -->
+    <ellipse cx="205" cy="200" rx="28" ry="18" fill="#581c87" transform="rotate(-8 205 200)" />
+    <ellipse cx="307" cy="200" rx="28" ry="18" fill="#581c87" transform="rotate(8 307 200)" />
+    
+    <!-- Smile -->
+    <path d="M210 270 Q256 300 302 270" stroke="#78350f" stroke-width="8" stroke-linecap="round" fill="none" />
+    
+    <!-- Decorative Forehead Crown/Gem -->
+    <polygon points="256,150 268,172 244,172" fill="#ffffff" opacity="0.9" />
+    <circle cx="256" cy="180" r="6" fill="#be185d" />
+
+    <!-- Festive Sparkles -->
+    <!-- Sparkle 1 Top Left -->
+    <path d="M100 130 Q100 110 110 110 Q100 110 100 90 Q100 110 90 110 Q100 110 100 130 Z" fill="#fef08a" />
+    <!-- Sparkle 2 Top Right -->
+    <path d="M410 140 Q410 120 422 120 Q410 120 410 100 Q410 120 398 120 Q410 120 410 140 Z" fill="#fef08a" />
+    <!-- Sparkle 3 Bottom Left -->
+    <path d="M130 360 Q130 345 140 345 Q130 345 130 330 Q130 345 120 345 Q130 345 130 360 Z" fill="#fef08a" />
+
+    <!-- Ribbon / Festive loops -->
+    <path d="M120 220 C80 230, 70 270, 95 300 C110 320, 140 310, 135 290" fill="none" stroke="#fbcfe8" stroke-width="6" stroke-linecap="round" />
+    <path d="M392 220 C432 230, 442 270, 417 300 C402 320, 372 310, 377 290" fill="none" stroke="#fbcfe8" stroke-width="6" stroke-linecap="round" />
+  </g>
+
+  <!-- Subtitle Ribbon text badge -->
+  <g transform="translate(106, 385)">
+    <rect width="300" height="52" rx="26" fill="#ffffff" opacity="0.95" />
+    <text x="150" y="33" text-anchor="middle" font-family="'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-weight="900" font-size="22" fill="#701a75" letter-spacing="1">LA CASA DEL DISFRAZ</text>
+  </g>
+</svg>

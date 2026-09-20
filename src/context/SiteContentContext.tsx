@@ -55,6 +55,13 @@ export const SiteContentProvider: React.FC<{ children: ReactNode }> = ({ childre
             const merged: SiteContent = {
               ...DEFAULT_SITE_CONTENT,
               ...data,
+              branding: { 
+                webLogoUrl: data.branding?.webLogoUrl || DEFAULT_SITE_CONTENT.branding?.webLogoUrl || '',
+                webLogoFooterUrl: data.branding?.webLogoFooterUrl || DEFAULT_SITE_CONTENT.branding?.webLogoFooterUrl,
+                pwaIconUrl: data.branding?.pwaIconUrl || DEFAULT_SITE_CONTENT.branding?.pwaIconUrl || '',
+                pwaAppName: data.branding?.pwaAppName || DEFAULT_SITE_CONTENT.branding?.pwaAppName,
+                pwaShortName: data.branding?.pwaShortName || DEFAULT_SITE_CONTENT.branding?.pwaShortName,
+              },
               theme: { ...DEFAULT_SITE_CONTENT.theme, ...(data.theme || {}) },
               announcement: { ...DEFAULT_SITE_CONTENT.announcement, ...(data.announcement || {}) },
               storeInfo: { 

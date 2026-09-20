@@ -2,6 +2,13 @@ import { SiteContent } from '../types/siteContent';
 
 export const DEFAULT_SITE_CONTENT: SiteContent = {
   updatedAt: new Date().toISOString(),
+  branding: {
+    webLogoUrl: 'https://lacasadeldisfraz.mx/images/logo-horizontal-web_one.png',
+    webLogoFooterUrl: 'https://lacasadeldisfraz.mx/images/2024/04/12/logo-blanco-2024.png',
+    pwaIconUrl: '/pwa-512x512.png',
+    pwaAppName: 'La Casa del Disfraz',
+    pwaShortName: 'LaCasaDisfraz'
+  },
   theme: {
     primaryColor: 'fuchsia',
     heroTheme: 'classic-fuchsia'

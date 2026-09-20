@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   MapPin, 
   Phone, 
@@ -18,6 +18,11 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
   const [logoLoaded, setLogoLoaded] = useState(true);
   const { content } = useSiteContent();
   const { storeInfo, footer } = content;
+  const footerLogo = content.branding?.webLogoFooterUrl || content.branding?.webLogoUrl || 'https://lacasadeldisfraz.mx/images/2024/04/12/logo-blanco-2024.png';
+
+  useEffect(() => {
+    setLogoLoaded(true);
+  }, [footerLogo]);
 
   return (
     <footer className="bg-slate-950 text-slate-300 pt-16 pb-12 border-t border-slate-800">
@@ -28,7 +33,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
             <div className="flex items-center gap-3">
               {logoLoaded ? (
                 <img
-                  src="https://lacasadeldisfraz.mx/images/2024/04/12/logo-blanco-2024.png"
+                  src={footerLogo}
                   alt={storeInfo.name}
                   className="h-10 sm:h-12 w-auto object-contain cursor-pointer"
                   onClick={() => onNavigate('/')}

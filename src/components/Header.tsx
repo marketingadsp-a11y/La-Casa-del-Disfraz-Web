@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   MapPin, 
   Clock, 
@@ -33,6 +33,11 @@ export const Header: React.FC<HeaderProps> = ({
   const [logoLoaded, setLogoLoaded] = useState(true);
   const { content } = useSiteContent();
   const { storeInfo, theme, navigationMenu } = content;
+  const webLogo = content.branding?.webLogoUrl || 'https://lacasadeldisfraz.mx/images/logo-horizontal-web_one.png';
+
+  useEffect(() => {
+    setLogoLoaded(true);
+  }, [webLogo]);
 
   const liveStatus = getStoreLiveStatus(storeInfo.manualStatusOverride);
 
@@ -107,7 +112,7 @@ export const Header: React.FC<HeaderProps> = ({
         >
           {logoLoaded ? (
             <img
-              src="https://lacasadeldisfraz.mx/images/logo-horizontal-web_one.png"
+              src={webLogo}
               alt={storeInfo.name}
               className="h-10 sm:h-12 w-auto object-contain transition-transform group-hover:scale-102"
               onError={() => setLogoLoaded(false)}

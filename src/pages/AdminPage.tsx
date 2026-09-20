@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSiteContent } from '../context/SiteContentContext';
 import { useAdminUsers } from '../context/AdminUsersContext';
 import { AdminExpensesTab } from '../components/admin/AdminExpensesTab';
+import { AdminSettingsTab } from '../components/admin/AdminSettingsTab';
 import { 
   SiteContent, 
   NavigationItem, 
@@ -46,7 +47,8 @@ import {
   Check,
   X,
   Key,
-  Receipt
+  Receipt,
+  Sliders
 } from 'lucide-react';
 
 interface AdminPageProps {
@@ -54,9 +56,10 @@ interface AdminPageProps {
 }
 
 type AdminTab = 
+  | 'ajustes'
+  | 'gastos'
   | 'menu'
   | 'secciones'
-  | 'gastos'
   | 'usuarios'
   | 'general' 
   | 'colores'
@@ -717,6 +720,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
               </div>
 
               {[
+                { id: 'ajustes', label: 'Ajustes & PWA (Logotipos)', icon: Sliders },
                 { id: 'gastos', label: 'Gastos & Egresos', icon: Receipt },
                 { id: 'menu', label: 'Menú Público de la Web', icon: MenuIcon },
                 { id: 'secciones', label: 'Páginas Dinámicas (/seccion)', icon: Navigation },
@@ -1327,6 +1331,16 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
                   )}
                 </div>
               </div>
+            )}
+
+            {/* TAB: AJUSTES & PWA LOGOTIPOS */}
+            {activeTab === 'ajustes' && (
+              <AdminSettingsTab
+                draft={draft}
+                onChange={setDraft}
+                onSave={handleSave}
+                isSaving={isSaving}
+              />
             )}
 
             {/* TAB: GASTOS Y REPORTES */}
