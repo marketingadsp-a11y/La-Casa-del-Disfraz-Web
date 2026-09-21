@@ -7,6 +7,7 @@ import {
   exportExpensesToExcel, 
   exportExpensesToPDF 
 } from '../../utils/expensesExport';
+import { AdminExpensesImportModal } from './AdminExpensesImportModal';
 import { 
   Receipt, 
   Calendar, 
@@ -27,7 +28,8 @@ import {
   ShieldCheck,
   ExternalLink,
   ChevronDown,
-  X
+  X,
+  UploadCloud
 } from 'lucide-react';
 
 export const AdminExpensesTab: React.FC = () => {
@@ -35,10 +37,14 @@ export const AdminExpensesTab: React.FC = () => {
     expenses, 
     config, 
     addExpense, 
+    importExpenses,
     updateExpense, 
     deleteExpense, 
     updateLockPin 
   } = useExpenses();
+
+  // Import modal state
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Filter states
   const [filterType, setFilterType] = useState<ExpenseDateFilter>('current_month');
@@ -311,6 +317,16 @@ export const AdminExpensesTab: React.FC = () => {
 
           <button
             type="button"
+            onClick={() => setIsImportModalOpen(true)}
+            className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer"
+            title="Importar archivo Excel o CSV con columnas: id, created, state, concepto, cantidad"
+          >
+            <UploadCloud className="w-4 h-4" />
+            <span>Importar CSV / Excel</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setIsAddModalOpen(true)}
             className="px-4 py-2 bg-fuchsia-600 hover:bg-fuchsia-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer"
           >
@@ -499,8 +515,18 @@ export const AdminExpensesTab: React.FC = () => {
             </div>
           </div>
 
-          {/* Export Buttons */}
+          {/* Export & Import Buttons */}
           <div className="flex flex-wrap items-center gap-2 pt-2 lg:pt-0">
+            <button
+              type="button"
+              onClick={() => setIsImportModalOpen(true)}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all active:scale-95 cursor-pointer"
+              title="Importar gastos desde archivo CSV o Excel"
+            >
+              <UploadCloud className="w-4 h-4" />
+              <span>Importar CSV</span>
+            </button>
+
             <button
               type="button"
               onClick={handleExportExcel}
@@ -882,6 +908,16 @@ export const AdminExpensesTab: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* CSV / Excel Import Modal */}
+      <AdminExpensesImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onImportSuccess={(count, totalAmount, message) => {
+          showToast(`¡${count} gastos importados exitosamente! Acomodados en sus respectivas fechas.`);
+        }}
+        importExpensesFn={importExpenses}
+      />
     </div>
   );
 };

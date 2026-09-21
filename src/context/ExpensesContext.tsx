@@ -96,6 +96,7 @@ interface ExpensesContextType {
   isLoading: boolean;
   isCloudSynced: boolean;
   addExpense: (concept: string, amount: number, notes?: string) => Promise<{ success: boolean; message: string; id?: string }>;
+  importExpenses: (items: Array<{ concept: string; amount: number; date: string; notes?: string; registeredBy?: string; id?: string }>) => Promise<{ success: boolean; count: number; message: string }>;
   updateExpense: (id: string, updated: Partial<ExpenseItem>) => Promise<{ success: boolean; message: string }>;
   deleteExpense: (id: string) => Promise<{ success: boolean; message: string }>;
   updateLockPin: (newPin: string) => Promise<{ success: boolean; message: string }>;
@@ -310,6 +311,87 @@ export const ExpensesProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   };
 
+  const importExpenses = async (
+    itemsToImport: Array<{ concept: string; amount: number; date: string; notes?: string; registeredBy?: string; id?: string }>
+  ): Promise<{ success: boolean; count: number; message: string }> => {
+    if (!itemsToImport || itemsToImport.length === 0) {
+      return { success: false, count: 0, message: 'No hay gastos válidos para importar.' };
+    }
+
+    const newExpenseItems: ExpenseItem[] = itemsToImport.map((raw, idx) => {
+      const cleanConcept = (raw.concept || 'Gasto importado').trim();
+      const cleanAmount = typeof raw.amount === 'number' && !isNaN(raw.amount) ? Number(raw.amount.toFixed(2)) : 0;
+      const rawDate = raw.date ? new Date(raw.date) : new Date();
+      const cleanDate = !isNaN(rawDate.getTime()) ? rawDate.toISOString() : new Date().toISOString();
+      const cleanId = raw.id && String(raw.id).trim().length > 0 
+        ? `exp_imp_${String(raw.id).trim().replace(/[^a-zA-Z0-9_-]/g, '_')}`
+        : `exp_imp_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`;
+
+      const item: ExpenseItem = {
+        id: cleanId,
+        concept: cleanConcept,
+        amount: cleanAmount,
+        date: cleanDate,
+        createdAt: cleanDate,
+        registeredBy: raw.registeredBy || 'Importado (CSV)'
+      };
+      if (raw.notes && raw.notes.trim()) {
+        item.notes = raw.notes.trim();
+      }
+      return item;
+    });
+
+    // Merge with current expenses (avoiding duplicate IDs if already present)
+    const existingMap = new Map<string, ExpenseItem>();
+    expenses.forEach(e => existingMap.set(e.id, e));
+    newExpenseItems.forEach(e => existingMap.set(e.id, e));
+
+    const mergedList = Array.from(existingMap.values());
+    // Sort descending by date so newest is first
+    mergedList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    // 1. Update in-memory state and local persistence immediately
+    setExpenses(mergedList);
+    persistLocalExpenses(mergedList);
+
+    // 2. Persist to Firestore
+    try {
+      const cleanList = sanitizeExpenseList(mergedList);
+      const docRef = doc(db, SITE_CONTENT_COLLECTION, EXPENSES_DOC);
+      await setDoc(docRef, {
+        items: cleanList.map(item => sanitizeForFirestore(item)),
+        updatedAt: new Date().toISOString(),
+        count: cleanList.length
+      }, { merge: true });
+      setIsCloudSynced(true);
+
+      // Also write in batches to /expenses collection (chunks of up to 400 docs)
+      const batchLimit = 400;
+      for (let i = 0; i < newExpenseItems.length; i += batchLimit) {
+        const chunk = newExpenseItems.slice(i, i + batchLimit);
+        const batch = writeBatch(db);
+        chunk.forEach(item => {
+          const itemDocRef = doc(db, EXPENSES_COLLECTION, item.id);
+          batch.set(itemDocRef, sanitizeForFirestore(item), { merge: true });
+        });
+        await batch.commit().catch(e => console.warn('Batch commit notice:', e));
+      }
+
+      return {
+        success: true,
+        count: newExpenseItems.length,
+        message: `Se importaron exitosamente ${newExpenseItems.length} gastos y se sincronizaron con la nube.`
+      };
+    } catch (err: any) {
+      console.error('Error syncing imported expenses to Firestore:', err);
+      return {
+        success: true,
+        count: newExpenseItems.length,
+        message: `Se importaron ${newExpenseItems.length} gastos en tu navegador (se sincronizarán en la nube automáticamente).`
+      };
+    }
+  };
+
   const updateExpense = async (
     id: string,
     updatedData: Partial<ExpenseItem>
@@ -401,6 +483,7 @@ export const ExpensesProvider: React.FC<{ children: ReactNode }> = ({ children }
         isLoading,
         isCloudSynced,
         addExpense,
+        importExpenses,
         updateExpense,
         deleteExpense,
         updateLockPin,

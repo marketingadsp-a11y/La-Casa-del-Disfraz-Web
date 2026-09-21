@@ -155,33 +155,20 @@ export const AdminMobileGridMenu: React.FC<AdminMobileGridMenuProps> = ({
       <div className="pointer-events-none absolute -bottom-16 left-1/4 w-96 h-96 rounded-full bg-blue-300/30 blur-3xl" />
 
       <div className="relative z-10 max-w-md mx-auto space-y-6">
-        {/* Brand Header with colorful playful typography or logo matching the mockup */}
-        <div className="text-center pt-2 pb-1 space-y-2">
-          {logoUrl ? (
-            <div className="flex justify-center items-center">
-              <img
-                src={logoUrl}
-                alt="La Casa del Disfraz"
-                className="max-h-16 w-auto object-contain drop-shadow-md"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-            </div>
-          ) : null}
-
-          <div className="inline-block">
-            <h1 className="font-fun text-3xl sm:text-4xl font-black tracking-tight drop-shadow-sm">
-              <span className="text-sky-500">La </span>
-              <span className="text-cyan-500">Casa </span>
-              <span className="text-pink-500">del </span>
-              <span className="text-fuchsia-600">Dis</span>
-              <span className="text-amber-500">fraz</span>
-              <span className="text-emerald-500">🎭</span>
-            </h1>
-            <p className="text-[11px] font-extrabold uppercase tracking-widest text-slate-500 mt-1">
-              Panel Administrativo • CyC
-            </p>
+        {/* Brand Header matching the mockup with logo */}
+        <div className="text-center pt-2 pb-1">
+          <div className="flex justify-center items-center">
+            <img
+              src={logoUrl || 'https://lacasadeldisfraz.mx/images/logo-horizontal-web_one.png'}
+              alt="La Casa del Disfraz"
+              className="max-h-20 w-auto object-contain drop-shadow-md"
+              onError={(e) => {
+                // Fallback to official logo if draft logo fails
+                if (e.currentTarget.src !== 'https://lacasadeldisfraz.mx/images/logo-horizontal-web_one.png') {
+                  e.currentTarget.src = 'https://lacasadeldisfraz.mx/images/logo-horizontal-web_one.png';
+                }
+              }}
+            />
           </div>
         </div>
 
