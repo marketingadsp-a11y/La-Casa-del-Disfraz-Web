@@ -1,13 +1,25 @@
 import React, { useState, useMemo } from 'react';
-import { useIncomes } from '../../context/IncomesContext';
+import { useIncomes, SyncFromLoyverseOptions } from '../../context/IncomesContext';
+import { useExpenses } from '../../context/ExpensesContext';
 import { useSiteContent } from '../../context/SiteContentContext';
 import { IncomeDateFilter, LoyverseReceipt } from '../../types/incomes';
 import { formatCurrency, formatDateTime } from '../../utils/expensesExport';
 import { exportIncomesToExcel, exportIncomesToPDF } from '../../utils/incomesExport';
+import {
+  LoyverseLiveProgressBar,
+  LoyverseRangeSyncModal,
+  FullBackupModal,
+  formatShortDateWithYear,
+  formatDayMonthYear,
+} from './LoyverseSyncModals';
 import { 
   TrendingUp, 
   Calendar, 
   RefreshCw, 
+  RotateCcw,
+  CalendarRange,
+  HardDriveDownload,
+  ShieldCheck,
   FileSpreadsheet, 
   FileText, 
   Search, 
@@ -39,15 +51,22 @@ export const AdminIncomesTab: React.FC<AdminIncomesTabProps> = ({ onNavigateToSe
     receipts, 
     isLoading,
     isSyncing, 
+    syncingMode,
+    syncProgress,
+    dbStats,
     error, 
     lastSyncTime, 
     syncFromLoyverse, 
+    cancelSync,
     calculateSummary 
   } = useIncomes();
+  const { expenses } = useExpenses();
 
   const { content } = useSiteContent();
   const loyverseConfig = content.loyverse;
   const hasToken = Boolean(loyverseConfig?.apiToken?.trim());
+  const [isRangeModalOpen, setIsRangeModalOpen] = useState(false);
+  const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
 
   // Filter state
   const [filterType, setFilterType] = useState<IncomeDateFilter>('current_month');
@@ -99,19 +118,61 @@ export const AdminIncomesTab: React.FC<AdminIncomesTabProps> = ({ onNavigateToSe
   }, [filteredReceipts, searchQuery, selectedReceiptType]);
 
   const handleSyncClick = async () => {
-    const res = await syncFromLoyverse();
+    setSyncNotice(null);
+    const res = await syncFromLoyverse({ mode: 'incremental' });
     if (res.success) {
       setSyncNotice({
-        text: `¡Sincronización completada con éxito! Se sincronizaron y respaldaron ${res.count} recibos en Firebase Firestore (site_content/loyverse_data).`,
-        type: 'success'
+        text:
+          res.message ||
+          `Sincronización verificada en Firebase (Total: ${(res.totalCount ?? receipts.length).toLocaleString('es-MX')} recibos).`,
+        type: 'success',
       });
-    } else {
+    } else if (!res.aborted) {
       setSyncNotice({
         text: res.error || 'No se pudo sincronizar con Loyverse',
-        type: 'error'
+        type: 'error',
       });
     }
-    setTimeout(() => setSyncNotice(null), 5000);
+    setTimeout(() => setSyncNotice(null), 8000);
+  };
+
+  const handleSyncFull = async () => {
+    setSyncNotice(null);
+    const res = await syncFromLoyverse({ mode: 'full' });
+    if (res.success) {
+      setSyncNotice({
+        text:
+          res.message ||
+          `Historial completo verificado: ${(res.totalCount ?? res.count).toLocaleString('es-MX')} recibos respaldados.`,
+        type: 'success',
+      });
+    } else if (!res.aborted) {
+      setSyncNotice({
+        text: res.error || 'Error al sincronizar el historial completo desde Loyverse',
+        type: 'error',
+      });
+    }
+    setTimeout(() => setSyncNotice(null), 8000);
+  };
+
+  const handleRunRangeSync = async (options: SyncFromLoyverseOptions) => {
+    setSyncNotice(null);
+    const res = await syncFromLoyverse(options);
+    if (res.success) {
+      setSyncNotice({
+        text:
+          res.message ||
+          `Rango sincronizado y verificado (Total BD: ${(res.totalCount ?? receipts.length).toLocaleString('es-MX')} recibos).`,
+        type: 'success',
+      });
+    } else if (!res.aborted) {
+      setSyncNotice({
+        text: res.error || 'Error al sincronizar el rango seleccionado',
+        type: 'error',
+      });
+    }
+    setTimeout(() => setSyncNotice(null), 8000);
+    return res;
   };
 
   const handleExportExcel = () => {
@@ -122,83 +183,125 @@ export const AdminIncomesTab: React.FC<AdminIncomesTabProps> = ({ onNavigateToSe
     exportIncomesToPDF(displayedReceipts, periodLabel, summary);
   };
 
+  const formattedLastSync = formatShortDateWithYear(dbStats.lastVerifiedAt || lastSyncTime) || 'Sin verificar';
+  const latestTicketDate = formatShortDateWithYear(dbStats.latestReceiptDate);
+  const oldestTicketDate = formatDayMonthYear(dbStats.oldestReceiptDate);
+
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       {/* Top Banner & Sync Bar */}
       <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-md relative overflow-hidden">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2 max-w-xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold uppercase tracking-wider backdrop-blur-xs">
-              <TrendingUp className="w-3.5 h-3.5" />
-              <span>Módulo de Ingresos • Loyverse POS</span>
-            </div>
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div className="space-y-1.5 max-w-xl">
             <h2 className="text-xl sm:text-2xl font-fun font-bold text-white">
-              Reportes de Ingresos y Ventas en Tiempo Real
+              Ingresos y Ventas · Loyverse POS
             </h2>
             <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
-              Consulta el flujo de caja diario, semanal, mensual o anual sincronizado directamente con el punto de venta Loyverse de la tienda física.
+              Consulta el flujo de caja diario, semanal, mensual o anual respaldado por particiones mensuales verificadas en Firebase.
             </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
               onClick={handleSyncClick}
               disabled={isSyncing || !hasToken}
-              className="px-5 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95 cursor-pointer"
+              className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer whitespace-nowrap"
             >
-              <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>{isSyncing ? 'Sincronizando Loyverse...' : 'Sincronizar Datos Ahora'}</span>
+              <RefreshCw className={`w-4 h-4 ${isSyncing && syncingMode === 'incremental' ? 'animate-spin' : ''}`} />
+              <span>{isSyncing && syncingMode === 'incremental' ? 'Sincronizando...' : 'Sincronizar Recientes'}</span>
+            </button>
+
+            <button
+              onClick={() => setIsRangeModalOpen(true)}
+              disabled={isSyncing || !hasToken}
+              className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer whitespace-nowrap"
+              title="Sincronizar un rango de fechas específico desde Loyverse"
+            >
+              <CalendarRange className="w-4 h-4 text-emerald-300" />
+              <span>Por Rango</span>
+            </button>
+
+            <button
+              onClick={handleSyncFull}
+              disabled={isSyncing || !hasToken}
+              className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer whitespace-nowrap"
+              title="Descargar todo el historial disponible en Loyverse sin límite de páginas"
+            >
+              <RotateCcw className={`w-4 h-4 text-emerald-300 ${isSyncing && syncingMode === 'full' ? 'animate-spin' : ''}`} />
+              <span>{isSyncing && syncingMode === 'full' ? 'Descargando Todo...' : 'Todo el Historial'}</span>
+            </button>
+
+            <button
+              onClick={() => setIsBackupModalOpen(true)}
+              className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer whitespace-nowrap"
+              title="Descargar respaldo completo de ingresos y gastos en Excel y JSON"
+            >
+              <HardDriveDownload className="w-4 h-4 text-emerald-300" />
+              <span>Respaldo Completo</span>
             </button>
 
             <button
               onClick={onNavigateToSettings}
-              className="px-4 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
+              className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer whitespace-nowrap"
               title="Configurar Ficha de Acceso Loyverse"
             >
               <Sliders className="w-4 h-4 text-emerald-300" />
-              <span>Ajustes de Ficha API</span>
+              <span>Ficha API</span>
             </button>
           </div>
         </div>
 
-        {/* Sync status footer */}
-        <div className="mt-6 pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-3 text-xs text-emerald-200">
-          <div className="flex items-center gap-2">
-            <Clock className="w-3.5 h-3.5 text-emerald-400" />
-            <span>
-              Última sincronización con Loyverse:{' '}
-              <strong className="text-white">
-                {lastSyncTime ? new Date(lastSyncTime).toLocaleString('es-MX') : 'No se ha sincronizado aún'}
-              </strong>
+        {/* Clean unboxed Sync & DB metadata footer */}
+        <div className="mt-5 pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-[11px] font-mono tabular-nums text-emerald-100">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            <span className="inline-flex items-center gap-1.5 text-white font-semibold">
+              <Database className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+              BD: {receipts.length.toLocaleString('es-MX')} recibos ({dbStats.monthsCount} meses)
             </span>
+            {oldestTicketDate && latestTicketDate && (
+              <>
+                <span aria-hidden="true" className="text-emerald-400/60">·</span>
+                <span>Desde {oldestTicketDate}</span>
+                <span aria-hidden="true" className="text-emerald-400/60">·</span>
+                <span>Último ticket: <strong className="text-white">{latestTicketDate}</strong></span>
+              </>
+            )}
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 text-emerald-200/90 bg-emerald-950/60 px-2.5 py-0.5 rounded-lg border border-emerald-500/20 text-[11px]">
-              <Database className="w-3 h-3 text-teal-300" />
-              <span>Guardado en la Base de Datos (Cloud Firestore)</span>
-            </div>
-
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            <span className="inline-flex items-center gap-1.5 text-emerald-200">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+              {dbStats.isVerified ? 'Verificada:' : 'Última sync:'} <strong className="text-white">{formattedLastSync}</strong>
+            </span>
+            <span aria-hidden="true" className="text-emerald-400/60">·</span>
             {!hasToken ? (
-              <div className="flex items-center gap-1.5 text-amber-300 bg-amber-950/50 px-3 py-1 rounded-xl border border-amber-500/30">
+              <span className="inline-flex items-center gap-1 text-amber-300 font-sans font-semibold">
                 <AlertCircle className="w-3.5 h-3.5" />
-                <span>Falta configurar la ficha de acceso de Loyverse</span>
-              </div>
+                Falta ficha API
+              </span>
             ) : (
-              <div className="flex items-center gap-1.5 text-emerald-300">
+              <span className="inline-flex items-center gap-1 text-emerald-300 font-sans font-semibold">
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Ficha API vinculada y activa</span>
-              </div>
+                Ficha activa
+              </span>
             )}
           </div>
         </div>
       </div>
 
+      {/* Live Sync Progress Bar & Error Diagnostics */}
+      <LoyverseLiveProgressBar
+        isSyncing={isSyncing}
+        progress={syncProgress}
+        onCancel={cancelSync}
+        onRetry={handleSyncClick}
+      />
+
       {/* Cloud loading indicator */}
       {isLoading && (
         <div className="p-4 bg-emerald-50/90 rounded-2xl border border-emerald-300 text-xs font-bold text-emerald-900 flex items-center gap-3 animate-in fade-in">
           <RefreshCw className="w-4 h-4 text-emerald-600 animate-spin shrink-0" />
-          <span>Consultando y descargando datos históricos de ingresos desde la Base de Datos en la Nube (Cloud Firestore)...</span>
+          <span>Cargando particiones mensuales de ingresos desde Cloud Firestore...</span>
         </div>
       )}
 
@@ -738,6 +841,25 @@ export const AdminIncomesTab: React.FC<AdminIncomesTabProps> = ({ onNavigateToSe
           </div>
         </div>
       )}
+
+      {/* Date Range Sync Modal */}
+      <LoyverseRangeSyncModal
+        isOpen={isRangeModalOpen}
+        onClose={() => setIsRangeModalOpen(false)}
+        latestReceiptDate={dbStats.latestReceiptDate}
+        isSyncing={isSyncing}
+        onRunRangeSync={handleRunRangeSync}
+      />
+
+      {/* Full Database Backup Modal (Excel 3-sheet + JSON) */}
+      <FullBackupModal
+        isOpen={isBackupModalOpen}
+        onClose={() => setIsBackupModalOpen(false)}
+        receipts={receipts}
+        expenses={expenses}
+        dbStats={dbStats}
+        lastSyncTime={lastSyncTime}
+      />
     </div>
   );
 };

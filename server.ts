@@ -75,8 +75,20 @@ app.get('/api/loyverse/receipts', async (req, res) => {
       }
     });
 
-    const data = await loyverseRes.json();
-    return res.status(loyverseRes.status).json(data);
+    const retryAfter = loyverseRes.headers.get('retry-after');
+    if (retryAfter) {
+      res.setHeader('Retry-After', retryAfter);
+    }
+
+    const rawText = await loyverseRes.text();
+    try {
+      const data = JSON.parse(rawText);
+      return res.status(loyverseRes.status).json(data);
+    } catch {
+      return res.status(loyverseRes.status).json({
+        error: rawText.slice(0, 200) || `Error HTTP ${loyverseRes.status} de Loyverse`
+      });
+    }
   } catch (err: any) {
     return res.status(500).json({
       error: `Error al consultar Loyverse desde el servidor: ${err?.message || 'Desconocido'}`

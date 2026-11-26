@@ -24,16 +24,26 @@ import {
   Store,
   ChevronDown,
   ChevronUp,
-  ArrowUpDown
+  ArrowUpDown,
+  CalendarRange,
+  HardDriveDownload,
+  ShieldCheck
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { useIncomes } from '../../context/IncomesContext';
+import { useIncomes, SyncFromLoyverseOptions } from '../../context/IncomesContext';
 import { useExpenses } from '../../context/ExpensesContext';
 import { useSiteContent } from '../../context/SiteContentContext';
 import { IncomeDateFilter } from '../../types/incomes';
 import { ExpenseItem } from '../../types/expenses';
 import { formatCurrency } from '../../utils/expensesExport';
 import { exportCorteToPDF } from '../../utils/corteExport';
+import {
+  LoyverseLiveProgressBar,
+  LoyverseRangeSyncModal,
+  FullBackupModal,
+  formatShortDateWithYear,
+  formatDayMonthYear,
+} from './LoyverseSyncModals';
 
 interface AdminCorteTabProps {
   onNavigateToSettings: () => void;
@@ -95,7 +105,10 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
     isLoading: isIncomesLoading, 
     isSyncing, 
     syncingMode,
+    syncProgress,
+    dbStats,
     syncFromLoyverse, 
+    cancelSync,
     lastSyncTime 
   } = useIncomes();
   const { expenses, isLoading: isExpensesLoading } = useExpenses();
@@ -105,6 +118,8 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
   const [sortAsc, setSortAsc] = useState<boolean>(false); // default most recent first
   const [viewMode, setViewMode] = useState<'sheet' | 'expanded'>('sheet');
   const [expandedDayKey, setExpandedDayKey] = useState<string | null>(null);
+  const [isRangeModalOpen, setIsRangeModalOpen] = useState(false);
+  const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
 
   // Custom date range
   const [customStartDate, setCustomStartDate] = useState(() => {
@@ -118,70 +133,70 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
 
   const [syncFeedback, setSyncFeedback] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  // 1. Sincronización incremental (desde la última fecha de recibo registrada en la base de datos)
+  // 1. Sincronización incremental (actualizaciones y tickets nuevos desde el último ticket guardado)
   const handleSyncIncremental = async () => {
     setSyncFeedback(null);
     const res = await syncFromLoyverse({ mode: 'incremental' });
     if (res.success) {
-      const msg = res.count > 0
-        ? `¡Sincronización incremental exitosa! Se integraron ${res.count} ventas nuevas a la base de datos (Total: ${res.totalCount || receipts.length} registros).`
-        : `¡Base de datos al día! No hay nuevas ventas en Loyverse desde la última sincronización.`;
-      setSyncFeedback({ text: msg, type: 'success' });
-    } else {
+      setSyncFeedback({
+        text:
+          res.message ||
+          `Sincronización verificada en Firebase (Total: ${(res.totalCount ?? receipts.length).toLocaleString('es-MX')} recibos).`,
+        type: 'success',
+      });
+    } else if (!res.aborted) {
       setSyncFeedback({ text: res.error || 'Error en la sincronización incremental con Loyverse', type: 'error' });
     }
-    setTimeout(() => setSyncFeedback(null), 6000);
+    setTimeout(() => setSyncFeedback(null), 8000);
   };
 
-  // 2. Sincronización completa (descarga de todo el historial de Loyverse a la base de datos)
+  // 2. Sincronización completa (descarga todo el historial disponible en Loyverse sin límite de páginas)
   const handleSyncFull = async () => {
     setSyncFeedback(null);
     const res = await syncFromLoyverse({ mode: 'full' });
     if (res.success) {
-      setSyncFeedback({ 
-        text: `¡Sincronización completa finalizada! Se descargaron y respaldaron ${res.totalCount || res.count} recibos históricos desde Loyverse.`, 
-        type: 'success' 
+      setSyncFeedback({
+        text:
+          res.message ||
+          `Historial completo respaldado y verificado: ${(res.totalCount ?? res.count).toLocaleString('es-MX')} recibos.`,
+        type: 'success',
       });
-    } else {
-      setSyncFeedback({ text: res.error || 'Error al re-sincronizar todo desde Loyverse', type: 'error' });
+    } else if (!res.aborted) {
+      setSyncFeedback({ text: res.error || 'Error al sincronizar el historial completo desde Loyverse', type: 'error' });
     }
-    setTimeout(() => setSyncFeedback(null), 6000);
+    setTimeout(() => setSyncFeedback(null), 8000);
   };
 
-  // Formatted status for sync time and latest receipt
-  const formattedLastSync = useMemo(() => {
-    if (!lastSyncTime) return 'Sin sincronizar';
-    try {
-      const d = new Date(lastSyncTime);
-      return d.toLocaleString('es-MX', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+  // 3. Sincronización por rango de fechas específico
+  const handleRunRangeSync = async (options: SyncFromLoyverseOptions) => {
+    setSyncFeedback(null);
+    const res = await syncFromLoyverse(options);
+    if (res.success) {
+      setSyncFeedback({
+        text:
+          res.message ||
+          `Rango sincronizado y verificado (Total BD: ${(res.totalCount ?? receipts.length).toLocaleString('es-MX')} recibos).`,
+        type: 'success',
       });
-    } catch {
-      return lastSyncTime;
+    } else if (!res.aborted) {
+      setSyncFeedback({ text: res.error || 'Error al sincronizar el rango seleccionado', type: 'error' });
     }
-  }, [lastSyncTime]);
+    setTimeout(() => setSyncFeedback(null), 8000);
+    return res;
+  };
+
+  // Formatted status for sync time and receipt date range (with year included)
+  const formattedLastSync = useMemo(() => {
+    return formatShortDateWithYear(dbStats.lastVerifiedAt || lastSyncTime) || 'Sin verificar';
+  }, [dbStats.lastVerifiedAt, lastSyncTime]);
 
   const latestTicketDate = useMemo(() => {
-    if (!receipts || receipts.length === 0) return null;
-    const top = receipts[0];
-    const dStr = top.created_at || top.receipt_date;
-    if (!dStr) return null;
-    try {
-      const d = new Date(dStr);
-      return d.toLocaleString('es-MX', {
-        day: '2-digit',
-        month: 'short',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch {
-      return null;
-    }
-  }, [receipts]);
+    return formatShortDateWithYear(dbStats.latestReceiptDate);
+  }, [dbStats.latestReceiptDate]);
+
+  const oldestTicketDate = useMemo(() => {
+    return formatDayMonthYear(dbStats.oldestReceiptDate);
+  }, [dbStats.oldestReceiptDate]);
 
   // 1. Calculate Start and End timestamps for the selected period
   const { periodStart, periodEnd, periodLabel } = useMemo(() => {
@@ -557,75 +572,108 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
           </div>
 
           {/* Quick Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
               onClick={handleExportPDF}
               disabled={isExportingPDF}
-              className="px-3.5 py-2.5 rounded-2xl bg-white text-slate-950 hover:bg-slate-100 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition active:scale-95 cursor-pointer disabled:opacity-50"
-              title="Descargar reporte oficial en formato PDF tamaño carta"
+              className="px-3.5 py-2.5 rounded-xl bg-white text-slate-950 hover:bg-slate-100 font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition active:scale-95 cursor-pointer disabled:opacity-50 whitespace-nowrap"
+              title="Descargar reporte oficial del período en formato PDF tamaño carta"
             >
               <FileDown className={`w-4 h-4 text-fuchsia-700 ${isExportingPDF ? 'animate-bounce' : ''}`} />
-              <span>{isExportingPDF ? 'Generando PDF...' : 'Exportar a PDF (Carta)'}</span>
+              <span>{isExportingPDF ? 'Generando PDF...' : 'PDF (Carta)'}</span>
             </button>
 
             <button
               onClick={handleExportExcel}
-              className="px-3.5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition active:scale-95 cursor-pointer"
-              title="Descargar tabla en formato Excel"
+              className="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition active:scale-95 cursor-pointer whitespace-nowrap"
+              title="Descargar tabla del período en formato Excel"
             >
               <FileSpreadsheet className="w-4 h-4" />
-              <span>Exportar Excel</span>
+              <span>Excel Período</span>
             </button>
 
-            {/* Botón 1: Sincronización incremental desde la base de datos a la fecha */}
+            <button
+              onClick={() => setIsBackupModalOpen(true)}
+              className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white font-bold text-xs flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer whitespace-nowrap"
+              title="Descargar respaldo completo de toda la base de datos en Excel y JSON"
+            >
+              <HardDriveDownload className="w-4 h-4 text-emerald-300" />
+              <span>Respaldo Completo</span>
+            </button>
+
+            {/* Botón 1: Sincronización incremental verificada */}
             <button
               onClick={handleSyncIncremental}
               disabled={isSyncing || !hasToken}
-              className="px-3.5 py-2.5 rounded-2xl bg-fuchsia-600 hover:bg-fuchsia-500 disabled:opacity-50 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition active:scale-95 cursor-pointer"
-              title="Sincronizar ventas nuevas desde la última fecha registrada en base de datos"
+              className="px-3.5 py-2.5 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-500 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition active:scale-95 cursor-pointer whitespace-nowrap"
+              title="Sincronizar ventas nuevas y actualizadas desde el último ticket guardado"
             >
               <RefreshCw className={`w-4 h-4 ${isSyncing && syncingMode === 'incremental' ? 'animate-spin' : ''}`} />
               <span>{isSyncing && syncingMode === 'incremental' ? 'Sincronizando...' : 'Sincronizar Recientes'}</span>
             </button>
 
-            {/* Botón 2: Sincronizar todo de nuevo (descarga histórica completa) */}
+            {/* Botón 2: Sincronizar por rango específico */}
+            <button
+              onClick={() => setIsRangeModalOpen(true)}
+              disabled={isSyncing || !hasToken}
+              className="px-3.5 py-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700/90 border border-white/15 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer whitespace-nowrap"
+              title="Elegir fecha de inicio y fin para recuperar cualquier período en Loyverse"
+            >
+              <CalendarRange className="w-4 h-4 text-fuchsia-300" />
+              <span>Por Rango</span>
+            </button>
+
+            {/* Botón 3: Sincronizar todo el historial disponible en Loyverse */}
             <button
               onClick={handleSyncFull}
               disabled={isSyncing || !hasToken}
-              className="px-3.5 py-2.5 rounded-2xl bg-slate-800/90 hover:bg-slate-700/90 border border-white/20 disabled:opacity-50 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition active:scale-95 cursor-pointer"
-              title="Descargar y re-sincronizar todo el historial completo desde Loyverse"
+              className="px-3.5 py-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700/90 border border-white/15 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer whitespace-nowrap"
+              title="Descargar todo el historial disponible en Loyverse sin límite de páginas y guardar por meses"
             >
               <RotateCcw className={`w-4 h-4 ${isSyncing && syncingMode === 'full' ? 'animate-spin' : ''}`} />
-              <span>{isSyncing && syncingMode === 'full' ? 'Re-sincronizando...' : 'Sincronizar Todo de Nuevo'}</span>
+              <span>{isSyncing && syncingMode === 'full' ? 'Descargando Todo...' : 'Todo el Historial'}</span>
             </button>
           </div>
         </div>
 
-        {/* Sync & Database status indicators */}
-        <div className="mt-6 pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-300">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-3.5 h-3.5 text-fuchsia-400" />
+        {/* Clean unboxed Database & Verification metadata */}
+        <div className="mt-5 pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-xs text-slate-300">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Calendar className="w-3.5 h-3.5 text-fuchsia-300 shrink-0" />
             <span>
               Período auditado: <strong className="text-white">{periodLabel}</strong>
             </span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-            <div className="flex items-center gap-1.5 text-slate-200 bg-white/10 px-2.5 py-1 rounded-lg border border-white/10 text-[11px]">
-              <Database className="w-3.5 h-3.5 text-fuchsia-300" />
-              <span>BD: <strong className="text-white">{receipts.length} recibos</strong></span>
-              {latestTicketDate && (
-                <span className="text-slate-300 ml-1">· Último ticket: {latestTicketDate}</span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-1.5 text-emerald-300 bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-500/20 text-[11px]">
-              <Sparkles className="w-3 h-3" />
-              <span>Última sync: <strong className="text-emerald-200">{formattedLastSync}</strong></span>
-            </div>
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono tabular-nums text-[11px] text-slate-300">
+            <span className="inline-flex items-center gap-1.5 text-white font-semibold">
+              <Database className="w-3.5 h-3.5 text-fuchsia-300 shrink-0" />
+              BD: {receipts.length.toLocaleString('es-MX')} recibos ({dbStats.monthsCount} meses)
+            </span>
+            {oldestTicketDate && latestTicketDate && (
+              <>
+                <span aria-hidden="true" className="text-slate-500">·</span>
+                <span>Desde {oldestTicketDate}</span>
+                <span aria-hidden="true" className="text-slate-500">·</span>
+                <span>Último ticket: <strong className="text-white">{latestTicketDate}</strong></span>
+              </>
+            )}
+            <span aria-hidden="true" className="text-slate-500">·</span>
+            <span className={`inline-flex items-center gap-1 ${dbStats.isVerified ? 'text-emerald-300' : 'text-amber-300'}`}>
+              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+              {dbStats.isVerified ? 'Verificada:' : 'Última sync:'} <strong className="text-white">{formattedLastSync}</strong>
+            </span>
           </div>
         </div>
       </div>
+
+      {/* Live Sync Progress Bar & Error Diagnostics */}
+      <LoyverseLiveProgressBar
+        isSyncing={isSyncing}
+        progress={syncProgress}
+        onCancel={cancelSync}
+        onRetry={handleSyncIncremental}
+      />
 
       {/* Sync Notice Alert */}
       {syncFeedback && (
@@ -1187,6 +1235,25 @@ export const AdminCorteTab: React.FC<AdminCorteTabProps> = ({ onNavigateToSettin
 
         </div>
       </div>
+
+      {/* Date Range Sync Modal */}
+      <LoyverseRangeSyncModal
+        isOpen={isRangeModalOpen}
+        onClose={() => setIsRangeModalOpen(false)}
+        latestReceiptDate={dbStats.latestReceiptDate}
+        isSyncing={isSyncing}
+        onRunRangeSync={handleRunRangeSync}
+      />
+
+      {/* Full Database Backup Modal (Excel 3-sheet + JSON) */}
+      <FullBackupModal
+        isOpen={isBackupModalOpen}
+        onClose={() => setIsBackupModalOpen(false)}
+        receipts={receipts}
+        expenses={expenses}
+        dbStats={dbStats}
+        lastSyncTime={lastSyncTime}
+      />
     </div>
   );
 };

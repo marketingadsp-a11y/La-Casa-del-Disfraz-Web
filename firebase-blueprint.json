@@ -99,12 +99,40 @@
           "type": "string"
         }
       }
+    },
+    "LoyverseManifest": {
+      "title": "LoyverseManifest",
+      "description": "Master v2 manifest for monthly-partitioned Loyverse POS receipts stored in site_content/loyverse_data.",
+      "type": "object",
+      "properties": {
+        "schemaVersion": { "type": "number" },
+        "updatedAt": { "type": "string" },
+        "lastSyncTime": { "type": "string" },
+        "lastVerifiedAt": { "type": "string" },
+        "receiptsCount": { "type": "number" },
+        "oldestReceiptDate": { "type": "string" },
+        "latestReceiptDate": { "type": "string" },
+        "months": { "type": "object" }
+      }
+    },
+    "LoyverseMonthPart": {
+      "title": "LoyverseMonthPart",
+      "description": "Byte-bounded monthly partition document (<= 420 KB) storing compacted Loyverse receipts in site_content/loyverse_m_YYYY-MM_pN.",
+      "type": "object",
+      "properties": {
+        "schemaVersion": { "type": "number" },
+        "monthKey": { "type": "string" },
+        "partIndex": { "type": "number" },
+        "updatedAt": { "type": "string" },
+        "receiptCount": { "type": "number" },
+        "receipts": { "type": "array" }
+      }
     }
   },
   "firestore": {
     "/site_content/{docId}": {
       "schema": "SiteContent",
-      "description": "Global document containing all editable website elements for La Casa del Disfraz."
+      "description": "Global site configuration, expenses backup, and Loyverse monthly-partitioned receipt manifest & parts."
     },
     "/admin_users/{userId}": {
       "schema": "AdminUser",

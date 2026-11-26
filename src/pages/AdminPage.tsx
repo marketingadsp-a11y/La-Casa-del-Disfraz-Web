@@ -179,9 +179,14 @@ export const AdminPage: React.FC<AdminPageProps> = ({ onNavigate }) => {
           if (res.success) {
             setToastMessage({
               text: res.newCount && res.newCount > 0
-                ? `¡Bienvenido, ${loggedUser.name || loggedUser.username}! Se sincronizaron ${res.newCount} nuevas ventas desde Loyverse.`
-                : `¡Bienvenido, ${loggedUser.name || loggedUser.username}! Base de datos de ventas al día.`,
+                ? `¡Bienvenido, ${loggedUser.name || loggedUser.username}! Se sincronizaron y verificaron ${res.newCount} nuevas ventas desde Loyverse.`
+                : `¡Bienvenido, ${loggedUser.name || loggedUser.username}! Base de datos de ventas verificada y al día.`,
               type: 'success'
+            });
+          } else if (!res.aborted && res.error) {
+            setToastMessage({
+              text: `Error al sincronizar Loyverse: ${res.error}`,
+              type: 'error'
             });
           }
         }).catch((err) => {
